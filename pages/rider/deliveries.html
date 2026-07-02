@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — My Deliveries</title>
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div class="stats-grid mb-28" id="del-stats"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📦 My Deliveries</h3>
+      </div>
+      <div class="filter-bar">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="form-control" placeholder="Search by customer, order ID..." id="search-input" oninput="render()">
+        </div>
+        <select class="form-control" id="status-filter" style="width:auto" onchange="render()">
+          <option value="">All</option>
+          <option value="pending">Pending</option>
+          <option value="in_transit">In Transit</option>
+          <option value="delivered">Delivered</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Order</th><th>Customer</th><th>Cylinder</th><th>Address</th><th>Total</th><th>Date</th><th>Status</th><th>Action</th></tr>
+          </thead>
+          <tbody id="del-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("rider", "deliveries", "My Deliveries");
+if (!user) throw 0;
+
+const all = Orders.byRider(user.id);
+
+document.getElementById("del-stats").innerHTML = [
+  { icon:"📦", value: all.length, label:"Total Assigned" },
+  { icon:"✅", value: all.filter(o=>o.status==="delivered").length, label:"Delivered" },
+  { icon:"🏍", value: all.filter(o=>o.status==="in_transit").length, label:"In Transit" },
+  { icon:"⏳", value: all.filter(o=>o.status==="pending").length, label:"Pending" },
+].map(s=>`<div class="stat-card"><span class="stat-icon">${s.icon}</span><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("");
+
+function render() {
+  const q = document.getElementById("search-input").value.toLowerCase();
+  const status = document.getElementById("status-filter").value;
+  const items = all.filter(o => {
+    const mq = !q || o.id.includes(q) || (o.customerName||"").toLowerCase().includes(q) || (o.address||"").toLowerCase().includes(q);
+    const ms = !status || o.status === status;
+    return mq && ms;
+  }).sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+
+  document.getElementById("del-tbody").innerHTML = items.length === 0
+    ? `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">📦</div><p>No deliveries found</p></div></td></tr>`
+    : items.map(o=>`<tr>
+        <td><span class="text-orange fw-700">#${o.id.slice(-4).toUpperCase()}</span><br><small>${o.emergency?'<span class="badge badge-danger">EMERGENCY</span>':''}</small></td>
+        <td>${o.customerName||"—"}</td>
+        <td>${o.cylinder} × ${o.quantity}</td>
+        <td style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${o.address||"—"}</td>
+        <td>${fmt.currency(o.total)}</td>
+        <td>${fmt.date(o.createdAt)}</td>
+        <td>${fmt.statusBadge(o.status)}</td>
+        <td>
+          ${o.status==="in_transit"?`<a href="qrscan.html?order=${o.id}" class="btn btn-primary btn-sm">Confirm QR</a>`:''}
+          ${o.status==="pending"?`<button class="btn btn-success btn-sm" onclick="startDelivery('${o.id}')">Start</button>`:''}
+          ${o.status==="delivered"?`<span class="badge badge-success">Done</span>`:''}
+        </td>
+      </tr>`).join("");
+}
+
+function startDelivery(id) {
+  Orders.update(id, { status: "in_transit" });
+  Toast.success("Delivery started!");
+  render();
+}
+
+render();
+</script>
+</body>
+</html>

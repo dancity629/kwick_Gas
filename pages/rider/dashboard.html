@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Rider Dashboard</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .availability-toggle {
+      display: flex; align-items: center; gap: 12px;
+      background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 16px 20px; margin-bottom: 24px;
+    }
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--red); transition: var(--transition); }
+    .status-dot.online { background: var(--green); box-shadow: 0 0 0 4px rgba(34,200,126,0.2); }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div class="availability-toggle">
+      <div class="status-dot" id="status-dot"></div>
+      <div style="flex:1">
+        <div style="font-weight:600" id="avail-label">Offline</div>
+        <small id="avail-sub">Toggle to start accepting deliveries</small>
+      </div>
+      <label class="toggle" style="position:relative;display:inline-block;width:52px;height:28px">
+        <input type="checkbox" id="avail-toggle" onchange="toggleAvailability()">
+        <span style="position:absolute;inset:0;background:var(--border);border-radius:14px;cursor:pointer;transition:.2s">
+          <span id="toggle-thumb" style="position:absolute;width:22px;height:22px;left:3px;top:3px;background:white;border-radius:50%;transition:.2s"></span>
+        </span>
+      </label>
+    </div>
+
+    <div class="stats-grid" id="rider-stats"></div>
+
+    <div class="grid-2 mb-28">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📦 Active Deliveries</h3>
+          <a href="deliveries.html" class="btn btn-secondary btn-sm">All</a>
+        </div>
+        <div id="active-deliveries"></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">🔔 Notifications</h3></div>
+        <div id="rider-notifs"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">📊 Today's Summary</h3></div>
+      <div class="grid-3" id="today-summary" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px"></div>
+    </div>
+  </main>
+</div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("rider", "dashboard", t("dashboard"));
+if (!user) throw 0;
+
+const available = user.available !== false;
+const dot = document.getElementById("status-dot");
+const toggle = document.getElementById("avail-toggle");
+const thumb = document.getElementById("toggle-thumb");
+
+function setAvail(val) {
+  dot.className = "status-dot" + (val ? " online" : "");
+  toggle.checked = val;
+  thumb.style.transform = val ? "translateX(24px)" : "";
+  document.getElementById("avail-label").textContent = val ? "Online — Accepting Deliveries" : "Offline";
+  document.getElementById("avail-sub").textContent = val ? "You will receive new delivery assignments" : "Toggle to start accepting deliveries";
+  toggle.parentElement.querySelector("span").style.background = val ? "var(--green)" : "var(--border)";
+}
+
+setAvail(available);
+
+function toggleAvailability() {
+  const val = toggle.checked;
+  Users.update(user.id, { available: val });
+  setAvail(val);
+  Toast.info(val ? "You're now online!" : "You're now offline");
+}
+
+// Stats
+const myOrders = Orders.byRider(user.id);
+const today = new Date().toDateString();
+const todayOrders = myOrders.filter(o => new Date(o.createdAt).toDateString() === today);
+document.getElementById("rider-stats").innerHTML = [
+  { icon: "📦", value: myOrders.length, label: "Total Assigned" },
+  { icon: "✅", value: myOrders.filter(o=>o.status==="delivered").length, label: "Completed" },
+  { icon: "🏍", value: myOrders.filter(o=>o.status==="in_transit").length, label: "In Transit" },
+  { icon: "🗓", value: todayOrders.length, label: "Today's Deliveries" },
+].map(s=>`<div class="stat-card"><span class="stat-icon">${s.icon}</span><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("");
+
+// Active deliveries
+const active = myOrders.filter(o=>o.status==="in_transit" || o.status==="pending");
+document.getElementById("active-deliveries").innerHTML = active.length === 0
+  ? `<div class="empty-state" style="padding:24px"><div class="empty-icon">📦</div><p>No active deliveries</p></div>`
+  : active.map(o=>`
+    <div style="padding:12px 0;border-bottom:1px solid var(--border)">
+      <div class="flex-between">
+        <div>
+          <div style="font-weight:600;font-size:.875rem">#${o.id.slice(-4).toUpperCase()} · ${o.cylinder} × ${o.quantity}</div>
+          <div style="font-size:.78rem;color:var(--text3)">📍 ${o.address}</div>
+          <div style="font-size:.78rem;color:var(--text3)">👤 ${o.customerName}</div>
+        </div>
+        <div style="text-align:right">
+          ${fmt.statusBadge(o.status)}
+          <br><a href="qrscan.html?order=${o.id}" class="btn btn-primary btn-sm" style="margin-top:6px">Confirm</a>
+        </div>
+      </div>
+    </div>`).join("");
+
+// Notifications
+const notifs = Notifications.forUser(user.id).slice(0,5);
+document.getElementById("rider-notifs").innerHTML = notifs.length===0
+  ? `<div class="empty-state" style="padding:24px"><p>No notifications</p></div>`
+  : notifs.map(n=>`<div style="padding:10px 0;border-bottom:1px solid var(--border);font-size:.8rem">
+      <div style="color:var(--text)">${n.message}</div>
+      <small>${fmt.date(n.createdAt)}</small>
+    </div>`).join("");
+
+// Today summary
+const delivered = todayOrders.filter(o=>o.status==="delivered");
+const revenue = delivered.reduce((s,o)=>s+o.total,0);
+document.getElementById("today-summary").innerHTML = [
+  { icon:"✅", value: delivered.length, label:"Delivered Today" },
+  { icon:"🏍", value: todayOrders.filter(o=>o.status==="in_transit").length, label:"In Progress" },
+  { icon:"💰", value: fmt.currency(revenue), label:"Value Delivered" },
+].map(s=>`<div class="stat-card"><span class="stat-icon">${s.icon}</span><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("");
+</script>
+</body>
+</html>

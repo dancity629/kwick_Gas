@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Emergency Gas</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .emergency-hero {
+      background: linear-gradient(135deg, rgba(240,79,95,0.15), rgba(192,57,43,0.08));
+      border: 2px solid rgba(240,79,95,0.3);
+      border-radius: var(--radius);
+      padding: 32px;
+      text-align: center;
+      margin-bottom: 28px;
+      position: relative;
+      overflow: hidden;
+    }
+    .emergency-hero::before {
+      content: '🚨';
+      font-size: 8rem;
+      position: absolute;
+      right: -20px;
+      top: 50%;
+      transform: translateY(-50%);
+      opacity: 0.06;
+    }
+    .big-emergency-btn {
+      width: 180px; height: 180px; border-radius: 50%;
+      background: radial-gradient(circle, var(--red), #8b0000);
+      border: 6px solid rgba(240,79,95,0.4);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      cursor: pointer; margin: 20px auto;
+      box-shadow: 0 0 0 12px rgba(240,79,95,0.1), 0 0 60px rgba(240,79,95,0.2);
+      font-family: var(--font-d); color: white; font-size: 1rem; font-weight: 700;
+      transition: all 0.2s; animation: emergencyPulse 2s infinite;
+      border: none;
+    }
+    .big-emergency-btn:hover { transform: scale(1.05); box-shadow: 0 0 0 16px rgba(240,79,95,0.15), 0 0 80px rgba(240,79,95,0.3); }
+    .big-emergency-btn:active { transform: scale(0.97); }
+    @keyframes emergencyPulse {
+      0%,100% { box-shadow: 0 0 0 12px rgba(240,79,95,0.1), 0 0 60px rgba(240,79,95,0.2); }
+      50% { box-shadow: 0 0 0 20px rgba(240,79,95,0.05), 0 0 80px rgba(240,79,95,0.3); }
+    }
+    .sent-state { display:none; text-align:center; padding:40px 20px; }
+    .sent-icon { font-size:5rem; margin-bottom:20px; animation: pop 0.5s ease; }
+    @keyframes pop { 0% { transform: scale(0); } 80% { transform: scale(1.1); } 100% { transform: scale(1); } }
+    .info-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+    .info-card { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; text-align: center; }
+    .countdown { font-family: var(--font-d); font-size: 2rem; font-weight: 800; color: var(--orange); }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <!-- Normal state -->
+    <div id="normal-state">
+      <div class="emergency-hero">
+        <div class="badge badge-danger" style="margin-bottom:16px">⚡ Priority Service</div>
+        <h1 style="color:var(--red);margin-bottom:8px" id="emg-title">Emergency Gas Request</h1>
+        <p id="emg-sub">Ran out of gas unexpectedly? Hit the button below and a rider will be dispatched immediately.</p>
+        <button class="big-emergency-btn" onclick="sendEmergency()">
+          <span style="font-size:2.5rem">🚨</span>
+          <span id="emg-btn-text">REQUEST NOW</span>
+        </button>
+        <p style="font-size:.8rem;color:var(--text3)" id="emg-note">Priority response within 15–20 minutes</p>
+      </div>
+
+      <div class="card mb-28">
+        <div class="card-header"><h3 class="card-title">📋 Emergency Details</h3></div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Your Phone</label>
+            <input type="tel" id="emg-phone" class="form-control" placeholder="080xxxxxxxx">
+          </div>
+          <div class="form-group">
+            <label>Cylinder Size Needed</label>
+            <select id="emg-cyl" class="form-control">
+              <option value="6kg">6kg</option>
+              <option value="12.5kg" selected>12.5kg</option>
+              <option value="25kg">25kg</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Delivery Address</label>
+          <input type="text" id="emg-address" class="form-control" placeholder="Your current location">
+        </div>
+        <div class="form-group">
+          <label>Additional Notes (optional)</label>
+          <textarea id="emg-notes" class="form-control" rows="2" placeholder="E.g. Gate colour, landmark..."></textarea>
+        </div>
+      </div>
+
+      <div class="info-cards mb-28">
+        <div class="info-card"><div style="font-size:2rem;margin-bottom:8px">⚡</div><h4>Priority Queue</h4><p>Emergency requests jump the queue — you're served first.</p></div>
+        <div class="info-card"><div style="font-size:2rem;margin-bottom:8px">📞</div><h4>Rider Calls You</h4><p>Your assigned rider will call to confirm before arriving.</p></div>
+        <div class="info-card"><div style="font-size:2rem;margin-bottom:8px">💳</div><h4>Cash on Delivery</h4><p>Emergency orders default to cash payment at your door.</p></div>
+        <div class="info-card"><div style="font-size:2rem;margin-bottom:8px">🔒</div><h4>QR Verified</h4><p>Your delivery is secured with a unique QR verification code.</p></div>
+      </div>
+    </div>
+
+    <!-- Sent state -->
+    <div class="sent-state" id="sent-state">
+      <div class="card" style="max-width:480px;margin:0 auto;padding:40px">
+        <div class="sent-icon">✅</div>
+        <h2 style="margin-bottom:12px" id="sent-title">Emergency Request Sent!</h2>
+        <p id="sent-sub">A rider is being dispatched to your location. You will receive a call shortly.</p>
+        <div style="margin:24px 0;padding:20px;background:var(--bg3);border-radius:var(--radius-sm)">
+          <div class="stat-label mb-20" style="margin-bottom:8px">Estimated Arrival</div>
+          <div class="countdown" id="countdown">15:00</div>
+          <div class="stat-label" style="margin-top:4px">minutes remaining</div>
+        </div>
+        <div id="sent-order-info" style="font-size:.85rem;text-align:left"></div>
+        <div style="margin-top:24px;display:flex;gap:12px;justify-content:center">
+          <a href="track.html" class="btn btn-primary">Track Order</a>
+          <button class="btn btn-secondary" onclick="resetEmergency()">New Request</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "emergency", t("emergency"));
+if (!user) throw 0;
+
+// Pre-fill
+document.getElementById("emg-phone").value = user.phone || "";
+document.getElementById("emg-address").value = user.address || "";
+
+let countdownInterval = null;
+
+function sendEmergency() {
+  const phone = document.getElementById("emg-phone").value.trim();
+  const address = document.getElementById("emg-address").value.trim();
+  const cyl = document.getElementById("emg-cyl").value;
+
+  if (!phone || !address) { Toast.error("Please enter your phone and address"); return; }
+
+  // Find available rider
+  const riders = Users.riders().filter(r => r.available);
+  const rider = riders[0] || null;
+
+  const order = Orders.create({
+    customerId: user.id,
+    customerName: user.name,
+    riderId: rider?.id || null,
+    riderName: rider?.name || null,
+    vendorId: "v1",
+    cylinder: cyl,
+    quantity: 1,
+    total: cylinderPrice(cyl, 1) + 500,
+    paymentMethod: "cash",
+    address,
+    note: document.getElementById("emg-notes").value + " [EMERGENCY REQUEST]",
+    emergency: true,
+  });
+
+  if (rider) {
+    Orders.update(order.id, { status: "in_transit" });
+    Notifications.add(rider.id, `🚨 EMERGENCY: Order #${order.id.slice(-4).toUpperCase()} for ${user.name} at ${address}`);
+  }
+
+  Notifications.add(user.id, t("emergencyMsg"));
+
+  // Show sent state
+  document.getElementById("normal-state").style.display = "none";
+  document.getElementById("sent-state").style.display = "";
+
+  document.getElementById("sent-order-info").innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="flex-between"><span class="text-muted">Order ID</span><strong>#${order.id.slice(-4).toUpperCase()}</strong></div>
+      <div class="flex-between"><span class="text-muted">Cylinder</span><strong>${cyl}</strong></div>
+      <div class="flex-between"><span class="text-muted">Address</span><strong>${address}</strong></div>
+      <div class="flex-between"><span class="text-muted">Rider</span><strong>${rider ? rider.name : "Being assigned..."}</strong></div>
+      <div class="flex-between"><span class="text-muted">Total</span><strong class="text-orange">${fmt.currency(order.total)}</strong></div>
+    </div>`;
+
+  // Countdown 15 min
+  let secs = 15 * 60;
+  countdownInterval = setInterval(() => {
+    secs--;
+    const m = String(Math.floor(secs/60)).padStart(2,"0");
+    const s = String(secs%60).padStart(2,"0");
+    document.getElementById("countdown").textContent = `${m}:${s}`;
+    if (secs <= 0) { clearInterval(countdownInterval); document.getElementById("countdown").textContent = "Arriving..."; }
+  }, 1000);
+
+  Toast.success(t("emergencyMsg"));
+}
+
+function resetEmergency() {
+  clearInterval(countdownInterval);
+  document.getElementById("normal-state").style.display = "";
+  document.getElementById("sent-state").style.display = "none";
+}
+
+// Apply Hausa strings if needed
+if (currentLang === 'ha') {
+  document.getElementById("emg-title").textContent = "Buƙatar Gaggawa";
+  document.getElementById("emg-sub").textContent = "Gas ɗinka ya ƙare ba zato ba tsammani? Danna maɓallin da ke ƙasa sannan mai keke zai tashi nan da nan.";
+  document.getElementById("emg-btn-text").textContent = "NEMI YANZU";
+  document.getElementById("emg-note").textContent = "Amsa da sauri a cikin mintuna 15-20";
+  document.getElementById("sent-title").textContent = "An Aika Buƙatar Gaggawa!";
+  document.getElementById("sent-sub").textContent = "Ana tura mai keke zuwa wurinku. Za ku sami kira nan ba da jimawa ba.";
+}
+</script>
+</body>
+</html>

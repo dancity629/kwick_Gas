@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Users – GasGo Admin</title>
+<link rel="stylesheet" href="../../css/style.css"/>
+<style>
+.toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.5rem}
+.toolbar input,.toolbar select{flex:1;min-width:140px;max-width:220px;padding:.55rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem}
+.toolbar input:focus,.toolbar select:focus{outline:none;border-color:var(--primary)}
+.users-table{width:100%;border-collapse:collapse}
+.users-table th{text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:.6rem .75rem;border-bottom:1px solid var(--border)}
+.users-table td{padding:.75rem;border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text-secondary)}
+.users-table tr:last-child td{border-bottom:none}
+.users-table tr:hover td{background:var(--surface-raised)}
+.avatar-cell{display:flex;align-items:center;gap:.6rem}
+.avatar-sm{width:30px;height:30px;border-radius:50%;background:var(--primary-dim);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:.8rem;font-weight:700;flex-shrink:0}
+.role-badge{padding:.2rem .6rem;border-radius:99px;font-size:.75rem;font-weight:600}
+.role-admin{background:rgba(239,68,68,.12);color:#ef4444}
+.role-rider{background:rgba(255,107,43,.12);color:var(--primary)}
+.role-customer{background:rgba(99,102,241,.12);color:#6366f1}
+.stats-row{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.stat-chip{background:var(--surface-raised);border:1px solid var(--border);border-radius:99px;padding:.3rem .85rem;font-size:.8rem;color:var(--text-secondary)}
+.stat-chip strong{color:var(--text-primary)}
+.action-btns{display:flex;gap:.4rem}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.form-group{display:flex;flex-direction:column;gap:.35rem}
+.form-group label{font-size:.8rem;color:var(--text-muted)}
+.form-group input,.form-group select{padding:.55rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem}
+.form-group input:focus,.form-group select:focus{outline:none;border-color:var(--primary)}
+.form-group.full{grid-column:1/-1}
+</style>
+</head>
+<body>
+<div class="app-layout" id="appLayout"></div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const currentAdmin = initPage('admin','users','User Management');
+const main = document.getElementById('mainContent');
+
+let filterRole='all', filterSearch='', page=1; const PER_PAGE=15;
+
+function getFiltered(){
+  let list = Users.all();
+  if(filterRole!=='all') list=list.filter(u=>u.role===filterRole);
+  if(filterSearch){
+    const q=filterSearch.toLowerCase();
+    list=list.filter(u=>u.name.toLowerCase().includes(q)||u.email.toLowerCase().includes(q)||(u.phone||'').includes(q));
+  }
+  return list.sort((a,b)=>a.name.localeCompare(b.name));
+}
+
+function render(){
+  const allUsers = Users.all();
+  const admins   = allUsers.filter(u=>u.role==='admin').length;
+  const riders   = allUsers.filter(u=>u.role==='rider').length;
+  const customers= allUsers.filter(u=>u.role==='customer').length;
+  const filtered = getFiltered();
+  const total=filtered.length, pages=Math.max(1,Math.ceil(total/PER_PAGE));
+  if(page>pages) page=pages;
+  const slice = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  main.innerHTML = `
+  <div class="stats-row">
+    <div class="stat-chip">Total <strong>${allUsers.length}</strong></div>
+    <div class="stat-chip">Admins <strong>${admins}</strong></div>
+    <div class="stat-chip">Riders <strong>${riders}</strong></div>
+    <div class="stat-chip">Customers <strong>${customers}</strong></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search name, email, phone…" value="${filterSearch}"/>
+    <select id="roleFilter">
+      <option value="all">All Roles</option>
+      <option value="admin">Admin</option>
+      <option value="rider">Rider</option>
+      <option value="customer">Customer</option>
+    </select>
+    <button class="btn btn-primary btn-sm" onclick="openAddUser()">+ Add User</button>
+    <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ Export</button>
+  </div>
+
+  <div class="card" style="padding:0;overflow:auto">
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Email</th>
+          <th>Phone</th>
+          <th>Role</th>
+          <th>Wallet</th>
+          <th>Orders</th>
+          <th>Joined</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${slice.length ? slice.map(u=>{
+          const uOrders = Orders.all().filter(o=>o.customerId===u.id||o.riderId===u.id).length;
+          return `<tr>
+            <td>
+              <div class="avatar-cell">
+                <div class="avatar-sm">${u.name.charAt(0).toUpperCase()}</div>
+                ${u.name}
+              </div>
+            </td>
+            <td>${u.email}</td>
+            <td>${u.phone||'—'}</td>
+            <td><span class="role-badge role-${u.role}">${u.role}</span></td>
+            <td>${fmt.currency(u.wallet||0)}</td>
+            <td>${uOrders}</td>
+            <td>${fmt.date(u.createdAt||new Date().toISOString())}</td>
+            <td>
+              <div class="action-btns">
+                <button class="btn btn-ghost btn-sm" onclick="viewUser('${u.id}')">View</button>
+                ${u.id!==currentAdmin.id?`<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteUser('${u.id}','${u.name}')">Delete</button>`:''}
+              </div>
+            </td>
+          </tr>`;
+        }).join('') : `<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem">No users found</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem">
+    <div style="font-size:.82rem;color:var(--text-muted)">Showing ${Math.min((page-1)*PER_PAGE+1,total)}–${Math.min(page*PER_PAGE,total)} of ${total}</div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-ghost btn-sm" onclick="goPage(${page-1})" ${page<=1?'disabled':''}>← Prev</button>
+      <span style="font-size:.82rem;color:var(--text-muted);padding:.4rem .5rem">${page}/${pages}</span>
+      <button class="btn btn-ghost btn-sm" onclick="goPage(${page+1})" ${page>=pages?'disabled':''}>Next →</button>
+    </div>
+  </div>
+  `;
+
+  document.getElementById('searchInput').value=filterSearch;
+  document.getElementById('roleFilter').value=filterRole;
+  document.getElementById('searchInput').addEventListener('input',e=>{filterSearch=e.target.value;page=1;render();});
+  document.getElementById('roleFilter').addEventListener('change',e=>{filterRole=e.target.value;page=1;render();});
+}
+
+function goPage(n){page=n;render();}
+
+function viewUser(uid){
+  const u=Users.find(uid);
+  if(!u)return;
+  const uOrders=Orders.all().filter(o=>o.customerId===uid);
+  const delivered=uOrders.filter(o=>o.status==='delivered');
+  Modal.openWith({
+    id:'userModal',
+    title:`${u.name} — Profile`,
+    body:`
+      <div style="display:grid;gap:.6rem;font-size:.88rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <div><span style="color:var(--text-muted)">Email</span><br>${u.email}</div>
+          <div><span style="color:var(--text-muted)">Phone</span><br>${u.phone||'—'}</div>
+          <div><span style="color:var(--text-muted)">Role</span><br><span class="role-badge role-${u.role}">${u.role}</span></div>
+          <div><span style="color:var(--text-muted)">Wallet</span><br><strong style="color:var(--primary)">${fmt.currency(u.wallet||0)}</strong></div>
+          <div><span style="color:var(--text-muted)">Total Orders</span><br>${uOrders.length}</div>
+          <div><span style="color:var(--text-muted)">Delivered</span><br>${delivered.length}</div>
+          <div><span style="color:var(--text-muted)">Language</span><br>${u.lang==='ha'?'Hausa':'English'}</div>
+          <div><span style="color:var(--text-muted)">Joined</span><br>${fmt.date(u.createdAt||new Date().toISOString())}</div>
+        </div>
+        ${u.address?`<div><span style="color:var(--text-muted)">Address</span><br>${u.address}</div>`:''}
+      </div>
+      <div style="margin-top:1rem">
+        <div style="font-size:.8rem;font-weight:600;color:var(--text-muted);margin-bottom:.5rem">ADJUST WALLET</div>
+        <div style="display:flex;gap:.5rem">
+          <input id="walletAmt" type="number" placeholder="Amount (₦)" style="flex:1;padding:.5rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem"/>
+          <button class="btn btn-primary btn-sm" onclick="adjustWallet('${uid}',1)">Credit</button>
+          <button class="btn btn-ghost btn-sm" onclick="adjustWallet('${uid}',-1)">Debit</button>
+        </div>
+      </div>
+    `,
+    size:'md'
+  });
+}
+
+function adjustWallet(uid, sign){
+  const amt = parseFloat(document.getElementById('walletAmt')?.value||0);
+  if(!amt||amt<=0){Toast.warn('Enter a valid amount');return;}
+  const u=Users.find(uid);
+  if(!u)return;
+  const newBal = (u.wallet||0) + sign*amt;
+  if(newBal<0){Toast.error('Insufficient wallet balance');return;}
+  Users.update(uid,{wallet:newBal});
+  Toast.success(`Wallet ${sign>0?'credited':'debited'}: ${fmt.currency(amt)}`);
+  Modal.close('userModal');
+  render();
+}
+
+function openAddUser(){
+  Modal.openWith({
+    id:'addUserModal',
+    title:'Add New User',
+    body:`
+      <div class="form-grid">
+        <div class="form-group"><label>Full Name</label><input id="nu_name" placeholder="e.g. Amina Sule"/></div>
+        <div class="form-group"><label>Email</label><input id="nu_email" type="email" placeholder="user@example.com"/></div>
+        <div class="form-group"><label>Phone</label><input id="nu_phone" placeholder="+234 800 000 0000"/></div>
+        <div class="form-group"><label>Role</label>
+          <select id="nu_role">
+            <option value="customer">Customer</option>
+            <option value="rider">Rider</option>
+            <option value="admin">Admin</option>
+          </select>
+        </div>
+        <div class="form-group full"><label>Password</label><input id="nu_pass" type="password" placeholder="Minimum 6 characters"/></div>
+      </div>
+    `,
+    footer:`<button class="btn btn-ghost btn-sm" onclick="Modal.close('addUserModal')">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveNewUser()">Add User</button>`,
+    size:'md'
+  });
+}
+
+function saveNewUser(){
+  const name=document.getElementById('nu_name')?.value.trim();
+  const email=document.getElementById('nu_email')?.value.trim();
+  const phone=document.getElementById('nu_phone')?.value.trim();
+  const role=document.getElementById('nu_role')?.value;
+  const pass=document.getElementById('nu_pass')?.value;
+  if(!name||!email||!pass){Toast.warn('Fill in all required fields');return;}
+  if(pass.length<6){Toast.warn('Password must be at least 6 characters');return;}
+  if(Users.all().find(u=>u.email===email)){Toast.error('Email already registered');return;}
+  Users.create({name,email,phone,role,password:pass,wallet:0,lang:'en'});
+  Toast.success(`${name} added as ${role}!`);
+  Modal.close('addUserModal');
+  render();
+}
+
+function deleteUser(uid, name){
+  if(uid===currentAdmin.id){Toast.error("You can't delete your own account");return;}
+  confirmAction(`Delete "${name}"?`,'This will permanently remove the user and their data.',()=>{
+    Users.delete(uid);
+    Toast.info(`${name} deleted`);
+    render();
+  });
+}
+
+function exportCSV(){
+  const rows=getFiltered();
+  const header=['Name','Email','Phone','Role','Wallet','Joined'];
+  const lines=rows.map(u=>[u.name,u.email,u.phone||'',u.role,u.wallet||0,fmt.date(u.createdAt||'')].join(','));
+  const csv=[header.join(','),...lines].join('\n');
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='gasgo_users.csv';
+  a.click();
+  Toast.success('Exported!');
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Vendors – GasGo Admin</title>
+<link rel="stylesheet" href="../../css/style.css"/>
+<style>
+.vendors-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:1.25rem;margin-bottom:2rem}
+.vendor-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;transition:border-color .2s}
+.vendor-card:hover{border-color:var(--primary)}
+.vendor-card-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:.75rem}
+.vendor-icon{width:44px;height:44px;border-radius:var(--radius);background:var(--primary-dim);display:flex;align-items:center;justify-content:center;font-size:1.3rem;flex-shrink:0}
+.vendor-name{font-size:.95rem;font-weight:600;color:var(--text-primary);margin-bottom:.2rem}
+.vendor-location{font-size:.8rem;color:var(--text-muted);display:flex;align-items:center;gap:.25rem}
+.vendor-stats{display:grid;grid-template-columns:1fr 1fr 1fr;gap:.5rem;margin:.75rem 0;padding:.75rem 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.v-stat{text-align:center}
+.v-stat-val{font-size:1rem;font-weight:700;color:var(--text-primary);font-family:var(--font-display)}
+.v-stat-label{font-size:.7rem;color:var(--text-muted)}
+.vendor-actions{display:flex;gap:.5rem}
+.toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.25rem}
+.toolbar input{flex:1;min-width:160px;max-width:300px;padding:.55rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem}
+.toolbar input:focus{outline:none;border-color:var(--primary)}
+.stock-indicator{display:flex;flex-direction:column;gap:.3rem;margin:.5rem 0}
+.stock-row{display:flex;align-items:center;gap:.5rem;font-size:.78rem}
+.stock-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.stock-name{color:var(--text-muted);width:60px}
+.stock-track{flex:1;height:6px;background:var(--surface-raised);border-radius:99px;overflow:hidden}
+.stock-fill{height:100%;background:var(--primary);border-radius:99px}
+.stock-qty{color:var(--text-secondary);width:24px;text-align:right}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.form-group{display:flex;flex-direction:column;gap:.35rem}
+.form-group label{font-size:.8rem;color:var(--text-muted)}
+.form-group input,.form-group select,.form-group textarea{padding:.55rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem;font-family:inherit}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--primary)}
+.form-group.full{grid-column:1/-1}
+</style>
+</head>
+<body>
+<div class="app-layout" id="appLayout"></div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+initPage('admin','vendors','Vendor Management');
+const main = document.getElementById('mainContent');
+
+let filterSearch = '';
+
+function getFiltered(){
+  let list = Vendors.all();
+  if(filterSearch){
+    const q=filterSearch.toLowerCase();
+    list=list.filter(v=>v.name.toLowerCase().includes(q)||(v.location||'').toLowerCase().includes(q)||(v.phone||'').includes(q));
+  }
+  return list;
+}
+
+function render(){
+  const vendors=getFiltered();
+  const allOrders=Orders.all();
+
+  main.innerHTML=`
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search vendors…" value="${filterSearch}"/>
+    <button class="btn btn-primary btn-sm" onclick="openAddVendor()">+ Add Vendor</button>
+  </div>
+
+  ${vendors.length?`
+  <div class="vendors-grid">
+    ${vendors.map(v=>{
+      const vOrders=allOrders.filter(o=>o.vendorId===v.id);
+      const delivered=vOrders.filter(o=>o.status==='delivered');
+      const revenue=delivered.reduce((s,o)=>s+(o.total||0),0);
+      const stock=v.stock||{};
+      const maxStock=Math.max(...Object.values(stock),1);
+      return `
+      <div class="vendor-card">
+        <div class="vendor-card-header">
+          <div style="display:flex;gap:.75rem;align-items:center;flex:1">
+            <div class="vendor-icon">🏪</div>
+            <div style="flex:1;min-width:0">
+              <div class="vendor-name">${v.name}</div>
+              <div class="vendor-location">📍 ${v.location||'No location'}</div>
+            </div>
+          </div>
+          <span class="badge badge-success" style="flex-shrink:0">Active</span>
+        </div>
+
+        <div class="vendor-stats">
+          <div class="v-stat">
+            <div class="v-stat-val">${vOrders.length}</div>
+            <div class="v-stat-label">Orders</div>
+          </div>
+          <div class="v-stat">
+            <div class="v-stat-val">${delivered.length}</div>
+            <div class="v-stat-label">Delivered</div>
+          </div>
+          <div class="v-stat">
+            <div class="v-stat-val">${fmt.currency(revenue).replace('₦','')}</div>
+            <div class="v-stat-label">Revenue</div>
+          </div>
+        </div>
+
+        <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:.4rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Stock</div>
+        <div class="stock-indicator">
+          ${Object.entries(stock).slice(0,4).map(([size,qty])=>`
+          <div class="stock-row">
+            <div class="stock-name">${size}</div>
+            <div class="stock-track"><div class="stock-fill" style="width:${Math.round(qty/maxStock*100)}%"></div></div>
+            <div class="stock-qty">${qty}</div>
+          </div>`).join('')}
+          ${Object.keys(stock).length===0?'<div style="color:var(--text-muted);font-size:.78rem">No stock data</div>':''}
+        </div>
+
+        <div class="vendor-actions" style="margin-top:.75rem">
+          <button class="btn btn-ghost btn-sm" onclick="editVendor('${v.id}')">Edit</button>
+          <button class="btn btn-ghost btn-sm" onclick="manageStock('${v.id}')">📦 Stock</button>
+          <button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="deleteVendor('${v.id}','${v.name}')">Delete</button>
+        </div>
+      </div>
+      `;
+    }).join('')}
+  </div>
+  ` : `<div class="card" style="text-align:center;padding:3rem;color:var(--text-muted)">No vendors found. <a href="#" onclick="openAddVendor()">Add one</a>.</div>`}
+  `;
+
+  document.getElementById('searchInput').value=filterSearch;
+  document.getElementById('searchInput').addEventListener('input',e=>{filterSearch=e.target.value;render();});
+}
+
+function openAddVendor(existing=null){
+  const v=existing||{};
+  Modal.openWith({
+    id:'vendorModal',
+    title:existing?`Edit — ${v.name}`:'Add New Vendor',
+    body:`
+      <div class="form-grid">
+        <div class="form-group full"><label>Vendor Name *</label><input id="vn_name" placeholder="e.g. Lafia Gas Hub" value="${v.name||''}"/></div>
+        <div class="form-group"><label>Phone</label><input id="vn_phone" placeholder="+234 …" value="${v.phone||''}"/></div>
+        <div class="form-group"><label>Email</label><input id="vn_email" type="email" placeholder="vendor@email.com" value="${v.email||''}"/></div>
+        <div class="form-group full"><label>Location / Address</label><input id="vn_loc" placeholder="e.g. Market Road, Lafia" value="${v.location||''}"/></div>
+        <div class="form-group full"><label>Description</label><textarea id="vn_desc" rows="2" placeholder="Brief vendor description">${v.description||''}</textarea></div>
+        <div class="form-group"><label>Opening Time</label><input id="vn_open" placeholder="e.g. 7:00 AM" value="${v.openingTime||''}"/></div>
+        <div class="form-group"><label>Closing Time</label><input id="vn_close" placeholder="e.g. 8:00 PM" value="${v.closingTime||''}"/></div>
+        <div class="form-group"><label>Min Order (₦)</label><input id="vn_min" type="number" placeholder="0" value="${v.minOrder||0}"/></div>
+        <div class="form-group"><label>Rating (0–5)</label><input id="vn_rating" type="number" step=".1" min="0" max="5" placeholder="4.5" value="${v.rating||''}"/></div>
+      </div>
+    `,
+    footer:`<button class="btn btn-ghost btn-sm" onclick="Modal.close('vendorModal')">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="saveVendor('${v.id||''}')">Save</button>`,
+    size:'lg'
+  });
+}
+
+function editVendor(vid){
+  const v=Vendors.all().find(x=>x.id===vid);
+  if(v) openAddVendor(v);
+}
+
+function saveVendor(vid){
+  const name=document.getElementById('vn_name')?.value.trim();
+  if(!name){Toast.warn('Vendor name is required');return;}
+  const data={
+    name,
+    phone:document.getElementById('vn_phone')?.value.trim()||'',
+    email:document.getElementById('vn_email')?.value.trim()||'',
+    location:document.getElementById('vn_loc')?.value.trim()||'',
+    description:document.getElementById('vn_desc')?.value.trim()||'',
+    openingTime:document.getElementById('vn_open')?.value.trim()||'',
+    closingTime:document.getElementById('vn_close')?.value.trim()||'',
+    minOrder:parseFloat(document.getElementById('vn_min')?.value||0),
+    rating:parseFloat(document.getElementById('vn_rating')?.value||4.5),
+  };
+  if(vid){
+    Vendors.update(vid,data);
+    Toast.success('Vendor updated!');
+  } else {
+    Vendors.create({...data,stock:{'3kg':10,'6kg':20,'12.5kg':15,'25kg':5}});
+    Toast.success('Vendor added!');
+  }
+  Modal.close('vendorModal');
+  render();
+}
+
+function manageStock(vid){
+  const v=Vendors.all().find(x=>x.id===vid);
+  if(!v)return;
+  const stock=v.stock||{};
+  const sizes=['3kg','6kg','12.5kg','25kg','50kg'];
+  Modal.openWith({
+    id:'stockModal',
+    title:`📦 Stock — ${v.name}`,
+    body:`
+      <div style="display:grid;gap:.6rem">
+        ${sizes.map(s=>`
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:.5rem .75rem;background:var(--surface-raised);border-radius:var(--radius)">
+          <span style="font-size:.88rem;color:var(--text-secondary)">${s} cylinder</span>
+          <div style="display:flex;align-items:center;gap:.5rem">
+            <button class="btn btn-ghost btn-sm" onclick="adjustStock('${vid}','${s}',-1)">−</button>
+            <span id="stock_${s.replace('.','_')}" style="font-size:.95rem;font-weight:600;color:var(--text-primary);min-width:32px;text-align:center">${stock[s]||0}</span>
+            <button class="btn btn-ghost btn-sm" onclick="adjustStock('${vid}','${s}',1)">+</button>
+            <input type="number" id="stockSet_${s.replace('.','_')}" placeholder="Set" style="width:70px;padding:.3rem .5rem;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.8rem"/>
+            <button class="btn btn-primary btn-sm" onclick="setStock('${vid}','${s}')">Set</button>
+          </div>
+        </div>`).join('')}
+      </div>
+    `,
+    size:'md'
+  });
+}
+
+function adjustStock(vid,size,delta){
+  const v=Vendors.all().find(x=>x.id===vid);
+  if(!v)return;
+  const stock={...v.stock||{}};
+  stock[size]=Math.max(0,(stock[size]||0)+delta);
+  Vendors.update(vid,{stock});
+  const el=document.getElementById('stock_'+size.replace('.','_'));
+  if(el) el.textContent=stock[size];
+}
+
+function setStock(vid,size){
+  const v=Vendors.all().find(x=>x.id===vid);
+  if(!v)return;
+  const input=document.getElementById('stockSet_'+size.replace('.','_'));
+  const val=parseInt(input?.value);
+  if(isNaN(val)||val<0){Toast.warn('Enter a valid quantity');return;}
+  const stock={...v.stock||{}};
+  stock[size]=val;
+  Vendors.update(vid,{stock});
+  const el=document.getElementById('stock_'+size.replace('.','_'));
+  if(el) el.textContent=val;
+  if(input) input.value='';
+  Toast.success(`${size} stock set to ${val}`);
+}
+
+function deleteVendor(vid,name){
+  const vOrders=Orders.all().filter(o=>o.vendorId===vid&&!['delivered','cancelled'].includes(o.status));
+  if(vOrders.length>0){Toast.error(`Cannot delete: ${vOrders.length} active order(s) pending`);return;}
+  confirmAction(`Delete "${name}"?`,'All vendor data will be removed.',()=>{
+    Vendors.delete(vid);
+    Toast.info(`${name} deleted`);
+    render();
+  });
+}
+
+render();
+</script>
+</body>
+</html>

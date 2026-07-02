@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Route Navigation</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .map-container {
+      height: 400px; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--radius); position: relative; overflow: hidden; margin-bottom: 20px;
+    }
+    .map-bg {
+      position: absolute; inset: 0;
+      background-image: linear-gradient(var(--border) 1px, transparent 1px),
+                        linear-gradient(90deg, var(--border) 1px, transparent 1px),
+                        linear-gradient(rgba(255,107,43,0.03) 1px, transparent 1px),
+                        linear-gradient(90deg, rgba(255,107,43,0.03) 1px, transparent 1px);
+      background-size: 60px 60px, 60px 60px, 20px 20px, 20px 20px;
+    }
+    .route-line { position: absolute; top: 30%; left: 20%; width: 60%; height: 3px; background: linear-gradient(90deg, var(--orange), var(--blue)); border-radius: 2px; }
+    .route-line::before { content: ''; position: absolute; inset: -3px; background: rgba(255,107,43,0.2); border-radius: 4px; }
+    .rider-pin { position: absolute; top: calc(30% - 10px); left: 20%; font-size: 1.5rem; animation: riderBounce 2s ease-in-out infinite; transform: translateX(-50%); }
+    .dest-pin { position: absolute; top: calc(30% - 18px); left: 80%; font-size: 1.5rem; transform: translateX(-50%); }
+    @keyframes riderBounce { 0%,100%{transform:translateX(-50%) translateY(0)} 50%{transform:translateX(-50%) translateY(-5px)} }
+    .map-controls { position: absolute; top: 12px; right: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .map-btn { width: 36px; height: 36px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: .9rem; }
+    .map-info { position: absolute; bottom: 12px; left: 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: .8rem; }
+    .stop-card { background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 14px; }
+    .stop-num { width: 32px; height: 32px; border-radius: 50%; background: var(--orange); color: white; font-weight: 700; display: flex; align-items: center; justify-content: center; font-size: .85rem; flex-shrink: 0; }
+    .stop-num.done { background: var(--green); }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div class="grid-2">
+      <div>
+        <div class="map-container">
+          <div class="map-bg"></div>
+          <div class="route-line" id="route-line"></div>
+          <div class="rider-pin">🏍</div>
+          <div class="dest-pin" id="dest-pin">📍</div>
+          <div class="map-controls">
+            <div class="map-btn">+</div>
+            <div class="map-btn">−</div>
+            <div class="map-btn">🎯</div>
+          </div>
+          <div class="map-info" id="map-info">
+            <div style="font-weight:600;color:var(--orange)">Your Location</div>
+            <div>Lafia, Nasarawa State</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">📍 Delivery Stops</h3></div>
+          <div id="stops-list"></div>
+          <div id="no-stops" style="display:none">
+            <div class="empty-state"><div class="empty-icon">🗺</div><p>No active deliveries to navigate to</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card mb-20">
+          <div class="card-header"><h3 class="card-title">🧭 Navigation Info</h3></div>
+          <div id="nav-active" style="text-align:center;padding:20px">
+            <div style="font-size:3rem;margin-bottom:12px">🗺</div>
+            <p>Select a delivery stop to get directions</p>
+          </div>
+          <div id="nav-info" style="display:none">
+            <div class="stat-card" style="margin-bottom:12px">
+              <div style="display:flex;gap:20px;align-items:center">
+                <div><div class="stat-value" id="nav-eta" style="font-size:1.5rem">—</div><div class="stat-label">Estimated Time</div></div>
+                <div><div class="stat-value" id="nav-dist" style="font-size:1.5rem">—</div><div class="stat-label">Distance</div></div>
+              </div>
+            </div>
+            <div style="font-size:.85rem;margin-bottom:12px" id="nav-address"></div>
+            <button class="btn btn-primary btn-full" onclick="openGoogleMaps()">📍 Open in Google Maps</button>
+            <button class="btn btn-success btn-full" style="margin-top:8px" id="arrive-btn" onclick="markArrived()">✅ Mark as Arrived</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">📊 Today's Route</h3></div>
+          <div id="route-stats" style="display:flex;flex-direction:column;gap:10px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("rider", "route", t("route"));
+if (!user) throw 0;
+
+let selectedStop = null;
+const activeDeliveries = Orders.byRider(user.id).filter(o => o.status === "in_transit" || o.status === "pending");
+
+if (activeDeliveries.length === 0) {
+  document.getElementById("stops-list").style.display = "none";
+  document.getElementById("no-stops").style.display = "";
+} else {
+  document.getElementById("stops-list").innerHTML = activeDeliveries.map((o, i) => `
+    <div class="stop-card" style="cursor:pointer" onclick="selectStop('${o.id}', ${i})">
+      <div class="stop-num ${o.status==='delivered'?'done':''}">${i+1}</div>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:.875rem">${o.customerName}</div>
+        <div style="font-size:.78rem;color:var(--text3)">📍 ${o.address}</div>
+        <div style="font-size:.78rem;color:var(--text3)">${o.cylinder} × ${o.quantity} · ${fmt.currency(o.total)}</div>
+      </div>
+      <div>
+        ${fmt.statusBadge(o.status)}
+        <div style="font-size:.72rem;color:var(--text3);margin-top:4px">~${5 + i*8} min</div>
+      </div>
+    </div>`).join("");
+}
+
+// Route stats
+const allToday = Orders.byRider(user.id).filter(o => new Date(o.createdAt).toDateString() === new Date().toDateString());
+document.getElementById("route-stats").innerHTML = [
+  { icon:"📦", label:"Stops Today", value: allToday.length },
+  { icon:"✅", label:"Completed", value: allToday.filter(o=>o.status==="delivered").length },
+  { icon:"⏱", label:"Est. Time Left", value: activeDeliveries.length * 12 + " min" },
+  { icon:"📏", label:"Est. Distance", value: (activeDeliveries.length * 2.4).toFixed(1) + " km" },
+].map(s=>`
+  <div class="flex-between" style="padding:10px;background:var(--bg3);border-radius:var(--radius-sm)">
+    <div style="font-size:.85rem;color:var(--text2)">${s.icon} ${s.label}</div>
+    <div style="font-weight:700">${s.value}</div>
+  </div>`).join("");
+
+function selectStop(id, idx) {
+  selectedStop = Orders.get(id);
+  document.getElementById("nav-active").style.display = "none";
+  document.getElementById("nav-info").style.display = "";
+  document.getElementById("nav-eta").textContent = (5 + idx * 8) + " min";
+  document.getElementById("nav-dist").textContent = (0.8 + idx * 1.2).toFixed(1) + " km";
+  document.getElementById("nav-address").innerHTML = `<strong>📍 Destination:</strong> ${selectedStop.address}<br><strong>👤 Customer:</strong> ${selectedStop.customerName}<br><strong>📞 Phone:</strong> ${Users.get(selectedStop.customerId)?.phone || "—"}`;
+
+  // Update map
+  document.getElementById("dest-pin").textContent = "🏠";
+  document.getElementById("map-info").innerHTML = `<div style="font-weight:600;color:var(--green)">Route Active</div><div>${(0.8 + idx*1.2).toFixed(1)} km away · ${5+idx*8} min</div>`;
+}
+
+function openGoogleMaps() {
+  if (!selectedStop) return;
+  const encoded = encodeURIComponent(selectedStop.address + ", Lafia, Nasarawa, Nigeria");
+  window.open(`https://maps.google.com/?q=${encoded}`, "_blank");
+}
+
+function markArrived() {
+  if (!selectedStop) return;
+  Toast.success("Marked as arrived! Proceed to QR scan.");
+  setTimeout(() => window.location.href = `qrscan.html?order=${selectedStop.id}`, 1200);
+}
+</script>
+</body>
+</html>

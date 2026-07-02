@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Order History</title>
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div class="stats-grid mb-28" id="hist-stats"></div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title">📋 Order History</h3>
+        <button class="btn btn-secondary btn-sm" onclick="exportCSV()">📥 Export</button>
+      </div>
+      <div class="filter-bar">
+        <div class="search-input-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="form-control" placeholder="Search orders..." id="search-input" oninput="renderOrders()">
+        </div>
+        <select class="form-control" id="status-filter" style="width:auto" onchange="renderOrders()">
+          <option value="">All Status</option>
+          <option value="pending">Pending</option>
+          <option value="in_transit">In Transit</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <select class="form-control" id="sort-filter" style="width:auto" onchange="renderOrders()">
+          <option value="newest">Newest First</option>
+          <option value="oldest">Oldest First</option>
+          <option value="highest">Highest Amount</option>
+        </select>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Order ID</th>
+              <th>Cylinder</th>
+              <th>Qty</th>
+              <th>Vendor</th>
+              <th>Payment</th>
+              <th>Total</th>
+              <th>Date</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody"></tbody>
+        </table>
+      </div>
+      <div id="pagination" style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap"></div>
+    </div>
+  </main>
+</div>
+
+<div class="modal-overlay" id="order-detail-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title">Order Details</h3>
+      <button class="modal-close" onclick="Modal.close('order-detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="order-detail-body"></div>
+  </div>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "history", t("orderHistory"));
+if (!user) throw 0;
+
+let currentPage = 1;
+const PER_PAGE = 8;
+const allOrders = Orders.byCustomer(user.id);
+
+// Stats
+const delivered = allOrders.filter(o=>o.status==="delivered");
+document.getElementById("hist-stats").innerHTML = [
+  { icon: "📦", value: allOrders.length, label: "Total Orders" },
+  { icon: "✅", value: delivered.length, label: "Delivered" },
+  { icon: "💰", value: fmt.currency(delivered.reduce((s,o)=>s+o.total,0)), label: "Total Spent" },
+  { icon: "⛽", value: delivered.reduce((s,o)=>s+o.quantity,0), label: "Cylinders Received" },
+].map(s=>`<div class="stat-card"><span class="stat-icon">${s.icon}</span><div class="stat-value">${s.value}</div><div class="stat-label">${s.label}</div></div>`).join("");
+
+function getFiltered() {
+  const q = document.getElementById("search-input").value.toLowerCase();
+  const status = document.getElementById("status-filter").value;
+  const sort = document.getElementById("sort-filter").value;
+  let orders = allOrders.filter(o => {
+    const matchQ = !q || o.id.toLowerCase().includes(q) || (o.cylinder||"").toLowerCase().includes(q) || (o.vendorName||"").toLowerCase().includes(q);
+    const matchS = !status || o.status === status;
+    return matchQ && matchS;
+  });
+  if (sort === "oldest") orders = [...orders].sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt));
+  else if (sort === "highest") orders = [...orders].sort((a,b)=>b.total-a.total);
+  else orders = [...orders].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+  return orders;
+}
+
+function renderOrders() {
+  currentPage = 1;
+  renderPage();
+}
+
+function renderPage() {
+  const filtered = getFiltered();
+  const { items, total, pages } = paginate(filtered, currentPage, PER_PAGE);
+
+  document.getElementById("orders-tbody").innerHTML = items.length === 0
+    ? `<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📦</div><p>${t("noOrders")}</p></div></td></tr>`
+    : items.map(o=>`
+      <tr>
+        <td><span class="text-orange fw-700">#${o.id.slice(-4).toUpperCase()}</span></td>
+        <td>${o.cylinder}</td>
+        <td>${o.quantity}</td>
+        <td>${o.vendorName||"—"}</td>
+        <td style="text-transform:capitalize">${(o.paymentMethod||"").replace("_"," ")}</td>
+        <td class="fw-700">${fmt.currency(o.total)}</td>
+        <td>${fmt.date(o.createdAt)}</td>
+        <td>${fmt.statusBadge(o.status)}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="viewDetail('${o.id}')">View</button>
+          ${o.status==="pending"?`<button class="btn btn-danger btn-sm" onclick="cancelOrder('${o.id}')" style="margin-left:4px">Cancel</button>`:''}
+        </td>
+      </tr>`).join("");
+
+  // Pagination
+  const pg = document.getElementById("pagination");
+  if (pages <= 1) { pg.innerHTML = ""; return; }
+  pg.innerHTML = Array.from({length:pages},(_,i)=>i+1).map(p=>
+    `<button class="btn ${p===currentPage?'btn-primary':'btn-secondary'} btn-sm" onclick="goPage(${p})">${p}</button>`
+  ).join("");
+}
+
+function goPage(p) { currentPage = p; renderPage(); }
+
+function viewDetail(id) {
+  const o = Orders.get(id);
+  if (!o) return;
+  document.getElementById("order-detail-body").innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:0">
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Order ID</span><strong>#${o.id.slice(-4).toUpperCase()}</strong></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Placed</span><span>${fmt.date(o.createdAt)} ${fmt.time(o.createdAt)}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Cylinder</span><span>${o.cylinder} × ${o.quantity}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Vendor</span><span>${o.vendorName||"—"}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Rider</span><span>${o.riderName||"Not assigned"}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Delivery Address</span><span>${o.address||"—"}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Payment</span><span style="text-transform:capitalize">${(o.paymentMethod||"").replace("_"," ")}</span></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Status</span>${fmt.statusBadge(o.status)}</div>
+      ${o.deliveredAt?`<div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span class="text-muted">Delivered At</span><span>${fmt.date(o.deliveredAt)} ${fmt.time(o.deliveredAt)}</span></div>`:''}
+      <div class="summary-row" style="display:flex;justify-content:space-between;padding:10px 0;font-weight:700;font-size:1.05rem"><span class="font-d">Total</span><span class="text-orange font-d">${fmt.currency(o.total)}</span></div>
+    </div>`;
+  Modal.open("order-detail-modal");
+}
+
+function cancelOrder(id) {
+  confirmAction("Are you sure you want to cancel this order?", () => {
+    Orders.update(id, { status: "cancelled" });
+    Toast.success("Order cancelled");
+    renderOrders();
+  });
+}
+
+function exportCSV() {
+  const orders = getFiltered();
+  const header = ["Order ID","Cylinder","Qty","Vendor","Payment","Total","Date","Status"];
+  const rows = orders.map(o=>[
+    "#"+o.id.slice(-4).toUpperCase(), o.cylinder, o.quantity,
+    o.vendorName||"", o.paymentMethod, o.total,
+    fmt.date(o.createdAt), o.status
+  ]);
+  const csv = [header,...rows].map(r=>r.join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = "data:text/csv;charset=utf-8," + encodeURIComponent(csv);
+  a.download = "gasgo_orders.csv";
+  a.click();
+  Toast.success("CSV exported!");
+}
+
+renderOrders();
+</script>
+</body>
+</html>

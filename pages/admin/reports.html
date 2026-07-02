@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Reports – GasGo Admin</title>
+<link rel="stylesheet" href="../../css/style.css"/>
+<style>
+.reports-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem;margin-bottom:2rem}
+.report-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.5rem;transition:border-color .2s;cursor:pointer}
+.report-card:hover{border-color:var(--primary)}
+.report-icon{font-size:2rem;margin-bottom:.75rem}
+.report-title{font-size:.95rem;font-weight:600;color:var(--text-primary);margin-bottom:.35rem}
+.report-desc{font-size:.82rem;color:var(--text-muted);line-height:1.5}
+.report-footer{display:flex;justify-content:space-between;align-items:center;margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border)}
+.report-format{font-size:.75rem;color:var(--text-muted)}
+.section-title{font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin:1.5rem 0 .75rem}
+.date-range-bar{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-lg);padding:1.25rem;margin-bottom:1.5rem;display:flex;gap:1rem;align-items:flex-end;flex-wrap:wrap}
+.date-range-bar .form-group{display:flex;flex-direction:column;gap:.3rem}
+.date-range-bar label{font-size:.78rem;color:var(--text-muted)}
+.date-range-bar input,.date-range-bar select{padding:.5rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem}
+.date-range-bar input:focus,.date-range-bar select:focus{outline:none;border-color:var(--primary)}
+.preview-table{width:100%;border-collapse:collapse;font-size:.83rem}
+.preview-table th{text-align:left;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:.5rem .6rem;border-bottom:1px solid var(--border)}
+.preview-table td{padding:.55rem .6rem;border-bottom:1px solid var(--border);color:var(--text-secondary)}
+.preview-table tr:last-child td{border-bottom:none}
+.preview-table tr:hover td{background:var(--surface-raised)}
+</style>
+</head>
+<body>
+<div class="app-layout" id="appLayout"></div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+initPage('admin','reports','Reports');
+const main = document.getElementById('mainContent');
+
+// Default date range: last 30 days
+const today = new Date();
+const thirtyAgo = new Date(); thirtyAgo.setDate(today.getDate()-30);
+const fmt_date_input = d => d.toISOString().slice(0,10);
+
+let dateFrom = fmt_date_input(thirtyAgo);
+let dateTo   = fmt_date_input(today);
+
+function getFilteredOrders(){
+  const from = new Date(dateFrom); from.setHours(0,0,0,0);
+  const to   = new Date(dateTo);   to.setHours(23,59,59,999);
+  return Orders.all().filter(o=>{
+    const d=new Date(o.createdAt);
+    return d>=from && d<=to;
+  });
+}
+
+function render(){
+  main.innerHTML=`
+  <div class="date-range-bar">
+    <div class="form-group">
+      <label>From Date</label>
+      <input type="date" id="dateFrom" value="${dateFrom}" max="${dateTo}"/>
+    </div>
+    <div class="form-group">
+      <label>To Date</label>
+      <input type="date" id="dateTo" value="${dateTo}" min="${dateFrom}" max="${fmt_date_input(today)}"/>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="applyDates()">Apply Range</button>
+    <button class="btn btn-ghost btn-sm" onclick="setPreset(7)">Last 7 Days</button>
+    <button class="btn btn-ghost btn-sm" onclick="setPreset(30)">Last 30 Days</button>
+    <button class="btn btn-ghost btn-sm" onclick="setPreset(90)">Last 90 Days</button>
+  </div>
+
+  <div class="section-title">📋 Available Reports</div>
+  <div class="reports-grid">
+    <div class="report-card" onclick="runReport('orders')">
+      <div class="report-icon">📦</div>
+      <div class="report-title">Orders Report</div>
+      <div class="report-desc">Full order list with customer, vendor, cylinder size, total, status, and rider for the selected date range.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · Excel-compatible</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+    <div class="report-card" onclick="runReport('revenue')">
+      <div class="report-icon">💰</div>
+      <div class="report-title">Revenue Report</div>
+      <div class="report-desc">Daily revenue breakdown, vendor-wise earnings, and order completion rates for the selected period.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · Daily breakdown</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+    <div class="report-card" onclick="runReport('riders')">
+      <div class="report-icon">🏍️</div>
+      <div class="report-title">Rider Performance Report</div>
+      <div class="report-desc">Deliveries completed, revenue generated, and average delivery time per rider.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · Per rider</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+    <div class="report-card" onclick="runReport('customers')">
+      <div class="report-icon">👥</div>
+      <div class="report-title">Customer Activity Report</div>
+      <div class="report-desc">Customer order frequency, total spend, and last order date for engagement tracking.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · Per customer</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+    <div class="report-card" onclick="runReport('stock')">
+      <div class="report-icon">🧴</div>
+      <div class="report-title">Cylinder Demand Report</div>
+      <div class="report-desc">Units sold per cylinder size across vendors — useful for restocking decisions.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · By cylinder size</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+    <div class="report-card" onclick="runReport('vendors')">
+      <div class="report-icon">🏪</div>
+      <div class="report-title">Vendor Summary Report</div>
+      <div class="report-desc">Per-vendor order count, delivery rate, and total revenue generated in the period.</div>
+      <div class="report-footer">
+        <span class="report-format">CSV · Per vendor</span>
+        <button class="btn btn-primary btn-sm">Export</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="previewSection"></div>
+  `;
+
+  document.getElementById('dateFrom').addEventListener('change',e=>{dateFrom=e.target.value;});
+  document.getElementById('dateTo').addEventListener('change',e=>{dateTo=e.target.value;});
+}
+
+function applyDates(){
+  dateFrom=document.getElementById('dateFrom')?.value||dateFrom;
+  dateTo=document.getElementById('dateTo')?.value||dateTo;
+  Toast.info('Date range updated');
+  document.getElementById('previewSection').innerHTML='';
+}
+
+function setPreset(days){
+  const to=new Date(); const from=new Date(); from.setDate(from.getDate()-days);
+  dateTo=fmt_date_input(to); dateFrom=fmt_date_input(from);
+  render();
+}
+
+function runReport(type){
+  const orders = getFilteredOrders();
+  const users = Users.all();
+  const vendors = Vendors.all();
+  let csv='', title='', preview='';
+
+  if(type==='orders'){
+    title='gasgo_orders_report';
+    const header=['Order ID','Date','Customer','Phone','Vendor','Cylinder','Qty','Total','Payment','Status','Rider','QR Verified'];
+    const rows=orders.map(o=>{
+      const c=users.find(u=>u.id===o.customerId);
+      const v=vendors.find(v=>v.id===o.vendorId);
+      const r=o.riderId?users.find(u=>u.id===o.riderId):null;
+      return[
+        '#'+o.id.slice(-8).toUpperCase(),
+        o.createdAt?.slice(0,10)||'',
+        c?.name||'',c?.phone||'',
+        v?.name||'',
+        o.cylinderSize,o.qty||1,o.total||0,
+        o.paymentMethod||'',o.status,
+        r?.name||'',
+        o.qrVerified?'Yes':'No'
+      ];
+    });
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header, rows.slice(0,5));
+  }
+
+  else if(type==='revenue'){
+    title='gasgo_revenue_report';
+    const byDay={};
+    orders.filter(o=>o.status==='delivered').forEach(o=>{
+      const key=o.createdAt?.slice(0,10)||'Unknown';
+      if(!byDay[key]) byDay[key]={orders:0,revenue:0};
+      byDay[key].orders++;
+      byDay[key].revenue+=(o.total||0);
+    });
+    const header=['Date','Orders Delivered','Revenue (₦)'];
+    const rows=Object.entries(byDay).sort((a,b)=>a[0].localeCompare(b[0])).map(([date,d])=>[date,d.orders,d.revenue]);
+    const totalRev=rows.reduce((s,r)=>s+r[2],0);
+    rows.push(['TOTAL',rows.reduce((s,r)=>s+r[1],0),totalRev]);
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header,rows.slice(0,5));
+  }
+
+  else if(type==='riders'){
+    title='gasgo_rider_performance';
+    const riderMap={};
+    orders.forEach(o=>{
+      if(!o.riderId)return;
+      const r=users.find(u=>u.id===o.riderId);
+      const name=r?.name||o.riderId;
+      if(!riderMap[name]) riderMap[name]={deliveries:0,cancelled:0,revenue:0,phone:r?.phone||''};
+      if(o.status==='delivered'){riderMap[name].deliveries++;riderMap[name].revenue+=(o.total||0);}
+      if(o.status==='cancelled') riderMap[name].cancelled++;
+    });
+    const header=['Rider','Phone','Deliveries','Cancelled','Revenue (₦)','Avg per Delivery (₦)'];
+    const rows=Object.entries(riderMap).sort((a,b)=>b[1].deliveries-a[1].deliveries).map(([name,s])=>[
+      name,s.phone,s.deliveries,s.cancelled,s.revenue,
+      s.deliveries?Math.round(s.revenue/s.deliveries):0
+    ]);
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header,rows.slice(0,5));
+  }
+
+  else if(type==='customers'){
+    title='gasgo_customer_activity';
+    const custMap={};
+    users.filter(u=>u.role==='customer').forEach(u=>{
+      const co=orders.filter(o=>o.customerId===u.id);
+      const delivered=co.filter(o=>o.status==='delivered');
+      const lastOrder=co.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))[0];
+      custMap[u.id]={name:u.name,email:u.email,phone:u.phone||'',orders:co.length,
+        delivered:delivered.length,spend:delivered.reduce((s,o)=>s+(o.total||0),0),
+        lastOrder:lastOrder?.createdAt?.slice(0,10)||'—',wallet:u.wallet||0};
+    });
+    const header=['Customer','Email','Phone','Total Orders','Delivered','Total Spend (₦)','Last Order','Wallet (₦)'];
+    const rows=Object.values(custMap).sort((a,b)=>b.spend-a.spend).map(s=>[
+      s.name,s.email,s.phone,s.orders,s.delivered,s.spend,s.lastOrder,s.wallet
+    ]);
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header,rows.slice(0,5));
+  }
+
+  else if(type==='stock'){
+    title='gasgo_cylinder_demand';
+    const demand={};
+    orders.filter(o=>o.status==='delivered').forEach(o=>{
+      demand[o.cylinderSize]=(demand[o.cylinderSize]||0)+(o.qty||1);
+    });
+    const header=['Cylinder Size','Units Sold','% of Total'];
+    const totalUnits=Object.values(demand).reduce((s,v)=>s+v,0)||1;
+    const rows=Object.entries(demand).sort((a,b)=>b[1]-a[1]).map(([size,qty])=>[
+      size,qty,(qty/totalUnits*100).toFixed(1)+'%'
+    ]);
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header,rows);
+  }
+
+  else if(type==='vendors'){
+    title='gasgo_vendor_summary';
+    const header=['Vendor','Location','Orders','Delivered','Delivery Rate','Revenue (₦)'];
+    const rows=vendors.map(v=>{
+      const vo=orders.filter(o=>o.vendorId===v.id);
+      const del=vo.filter(o=>o.status==='delivered');
+      const rate=vo.length?(del.length/vo.length*100).toFixed(1)+'%':'0%';
+      const rev=del.reduce((s,o)=>s+(o.total||0),0);
+      return[v.name,v.location||'',vo.length,del.length,rate,rev];
+    }).sort((a,b)=>b[5]-a[5]);
+    csv=[header,...rows].map(r=>r.join(',')).join('\n');
+    preview=buildPreviewTable(header,rows.slice(0,5));
+  }
+
+  // Download
+  const blob=new Blob([csv],{type:'text/csv'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`${title}_${dateFrom}_to_${dateTo}.csv`;
+  a.click();
+  Toast.success('Report exported!');
+
+  // Show preview
+  document.getElementById('previewSection').innerHTML=`
+    <div class="section-title">👁 Preview — ${title.replace(/_/g,' ')} (first 5 rows)</div>
+    <div class="card" style="padding:0;overflow:auto">${preview}</div>
+  `;
+}
+
+function buildPreviewTable(header,rows){
+  return `<table class="preview-table">
+    <thead><tr>${header.map(h=>`<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>
+      ${rows.length?rows.map(r=>`<tr>${r.map(c=>`<td>${c}</td>`).join('')}</tr>`).join('')
+        :'<tr><td colspan="'+header.length+'" style="text-align:center;color:var(--text-muted);padding:1rem">No data in this date range</td></tr>'}
+    </tbody>
+  </table>`;
+}
+
+render();
+</script>
+</body>
+</html>

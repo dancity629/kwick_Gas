@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Book Gas</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .booking-layout {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      gap: 24px;
+    }
+
+    .vendor-card {
+      border: 2px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+      cursor: pointer;
+      transition: var(--transition);
+      margin-bottom: 12px;
+    }
+
+    .vendor-card:hover {
+      border-color: var(--orange2);
+    }
+
+    .vendor-card.selected {
+      border-color: var(--orange);
+      background: rgba(255, 107, 43, 0.06);
+    }
+
+    .cyl-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 4px;
+    }
+
+    .cyl-btn {
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: var(--transition);
+      background: var(--bg3);
+    }
+
+    .cyl-btn:hover {
+      border-color: var(--orange2);
+    }
+
+    .cyl-btn.selected {
+      border-color: var(--orange);
+      background: rgba(255, 107, 43, 0.1);
+    }
+
+    .cyl-btn .size {
+      font-family: var(--font-d);
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text);
+    }
+
+    .cyl-btn .price {
+      font-size: 0.72rem;
+      color: var(--text3);
+      margin-top: 3px;
+    }
+
+    .order-summary {
+      position: sticky;
+      top: 20px;
+    }
+
+    .summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: .875rem;
+    }
+
+    .summary-row:last-child {
+      border-bottom: none;
+    }
+
+    .payment-opts {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .pay-opt {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+      border: 2px solid var(--border);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .pay-opt:hover {
+      border-color: var(--orange2);
+    }
+
+    .pay-opt.selected {
+      border-color: var(--orange);
+      background: rgba(255, 107, 43, 0.06);
+    }
+
+    .pay-opt input {
+      accent-color: var(--orange);
+    }
+
+    .step-indicator {
+      display: flex;
+      gap: 0;
+      margin-bottom: 28px;
+    }
+
+    .step {
+      flex: 1;
+      text-align: center;
+    }
+
+    .step-dot {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg3);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 6px;
+      font-size: .8rem;
+      font-weight: 700;
+      transition: var(--transition);
+    }
+
+    .step-dot.done {
+      background: var(--green);
+      border-color: var(--green);
+      color: white;
+    }
+
+    .step-dot.active {
+      background: var(--orange);
+      border-color: var(--orange);
+      color: white;
+    }
+
+    .step-label {
+      font-size: .72rem;
+      color: var(--text3);
+    }
+
+    .step-line {
+      flex: 1;
+      height: 2px;
+      background: var(--border);
+      margin-top: 15px;
+    }
+
+    .step-line.done {
+      background: var(--green);
+    }
+
+    @media(max-width:900px) {
+      .booking-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .order-summary {
+        position: static;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="page">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main-content">
+      <div id="topbar"></div>
+
+      <div class="step-indicator">
+        <div class="step">
+          <div class="step-dot active" id="s1">1</div>
+          <div class="step-label">Vendor & Cylinder</div>
+        </div>
+        <div class="step-line" id="l1"></div>
+        <div class="step">
+          <div class="step-dot" id="s2">2</div>
+          <div class="step-label">Delivery Details</div>
+        </div>
+        <div class="step-line" id="l2"></div>
+        <div class="step">
+          <div class="step-dot" id="s3">3</div>
+          <div class="step-label">Payment</div>
+        </div>
+        <div class="step-line" id="l3"></div>
+        <div class="step">
+          <div class="step-dot" id="s4">4</div>
+          <div class="step-label">Confirm</div>
+        </div>
+      </div>
+
+      <div class="booking-layout">
+        <div>
+          <!-- Step 1 -->
+          <div id="step-1">
+            <div class="card mb-20">
+              <div class="card-header">
+                <h3 class="card-title">🏪 Select Vendor</h3>
+              </div>
+              <div id="vendor-list"></div>
+            </div>
+            <div class="card mb-20">
+              <div class="card-header">
+                <h3 class="card-title">⛽ Choose Cylinder</h3>
+              </div>
+              <div class="cyl-grid" id="cyl-grid"></div>
+              <div class="flex-between mt-16" style="margin-top:16px">
+                <label
+                  style="font-size:.8rem;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Quantity</label>
+                <div class="flex gap-8" style="align-items:center">
+                  <button class="btn btn-secondary btn-icon" onclick="changeQty(-1)">−</button>
+                  <span id="qty-display"
+                    style="font-family:var(--font-d);font-weight:700;font-size:1.2rem;min-width:24px;text-align:center">1</span>
+                  <button class="btn btn-secondary btn-icon" onclick="changeQty(1)">+</button>
+                </div>
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="goStep(2)">Next: Delivery Details →</button>
+          </div>
+
+          <!-- Step 2 -->
+          <div id="step-2" style="display:none">
+            <div class="card mb-20">
+              <div class="card-header">
+                <h3 class="card-title">📍 Delivery Details</h3>
+              </div>
+              <div class="form-group">
+                <label>Delivery Address</label>
+                <input type="text" id="del-address" class="form-control" placeholder="Enter delivery address">
+              </div>
+              <div class="form-group">
+                <label>Preferred Time</label>
+                <select id="del-time" class="form-control">
+                  <option value="asap">As soon as possible</option>
+                  <option value="morning">Morning (7am–12pm)</option>
+                  <option value="afternoon">Afternoon (12pm–5pm)</option>
+                  <option value="evening">Evening (5pm–8pm)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Special Instructions (optional)</label>
+                <textarea id="del-note" class="form-control" rows="2" placeholder="E.g. Call before arrival"></textarea>
+              </div>
+            </div>
+            <div class="flex gap-12">
+              <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+              <button class="btn btn-primary" onclick="goStep(3)">Next: Payment →</button>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div id="step-3" style="display:none">
+            <div class="card mb-20">
+              <div class="card-header">
+                <h3 class="card-title">💳 Payment Method</h3>
+              </div>
+              <div class="payment-opts">
+                <label class="pay-opt selected" id="pay-cash" onclick="selectPay('cash')">
+                  <input type="radio" name="payment" value="cash" checked>
+                  <span style="font-size:1.4rem">💵</span>
+                  <div>
+                    <div style="font-weight:600;font-size:.9rem">${t("cash")}</div><small>Pay when your gas
+                      arrives</small>
+                  </div>
+                </label>
+                <label class="pay-opt" id="pay-transfer" onclick="selectPay('transfer')">
+                  <input type="radio" name="payment" value="transfer">
+                  <span style="font-size:1.4rem">🏦</span>
+                  <div>
+                    <div style="font-weight:600;font-size:.9rem">${t("transfer")}</div><small>GTBank: 0123456789 — GasGo
+                      Ltd</small>
+                  </div>
+                </label>
+                <label class="pay-opt" id="pay-wallet" onclick="selectPay('wallet')">
+                  <input type="radio" name="payment" value="wallet">
+                  <span style="font-size:1.4rem">👛</span>
+                  <div id="wallet-label">
+                    <div style="font-weight:600;font-size:.9rem">${t("wallet")}</div><small>Balance: ...</small>
+                  </div>
+                </label>
+              </div>
+            </div>
+            <div class="flex gap-12">
+              <button class="btn btn-secondary" onclick="goStep(2)">← Back</button>
+              <button class="btn btn-primary" onclick="goStep(4)">Review Order →</button>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div id="step-4" style="display:none">
+            <div class="card mb-20">
+              <div class="card-header">
+                <h3 class="card-title">✅ Review & Confirm</h3>
+              </div>
+              <div id="review-content"></div>
+            </div>
+            <div class="flex gap-12">
+              <button class="btn btn-secondary" onclick="goStep(3)">← Back</button>
+              <button class="btn btn-primary btn-lg" onclick="placeOrder()">🛒 Place Order</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary sidebar -->
+        <div class="order-summary">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">🧾 Order Summary</h3>
+            </div>
+            <div class="summary-row"><span class="text-muted">Vendor</span><span id="sum-vendor">—</span></div>
+            <div class="summary-row"><span class="text-muted">Cylinder</span><span id="sum-cyl">—</span></div>
+            <div class="summary-row"><span class="text-muted">Qty</span><span id="sum-qty">1</span></div>
+            <div class="summary-row"><span class="text-muted">Unit Price</span><span id="sum-unit">—</span></div>
+            <div class="summary-row"><span class="text-muted">Delivery Fee</span><span>₦500</span></div>
+            <div class="summary-row" style="font-weight:700">
+              <span class="font-d">Total</span>
+              <span class="text-orange font-d" id="sum-total">—</span>
+            </div>
+            <div id="sum-eta"
+              style="margin-top:16px;padding:12px;background:var(--bg3);border-radius:var(--radius-sm);font-size:.8rem;color:var(--text2)">
+              ⏱ Estimated delivery: <strong style="color:var(--text)">15–30 minutes</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="../../js/store.js"></script>
+  <script src="../../js/ui.js"></script>
+  <script>
+    const user = initPage("customer", "book", t("bookGas"));
+    if (!user) throw 0;
+
+    let vendors = [];
+    let products = [];
+
+    let selectedVendor = null;
+    let selectedCyl = null;
+    let qty = 1;
+    let payMethod = "cash";
+    const DELIVERY_FEE = 500;
+
+    // Vendors
+    async function loadVendors() {
+
+      try {
+
+        const response = await fetch(
+          "http://localhost/Kwick_Gas/api/vendors/list.php"
+        );
+
+        const result = await response.json();
+
+        if (!result.success) {
+          Toast.error(result.message);
+          return;
+        }
+
+        vendors = result.data.filter(v => Number(v.active) === 1);
+
+        document.getElementById("vendor-list").innerHTML =
+          vendors.map(v => `
+                <div class="vendor-card"
+                     id="vendor-${v.id}"
+                     onclick="selectVendor(${v.id})">
+
+                    <div class="flex-between">
+
+                        <div>
+                            <div style="font-weight:600">${v.name}</div>
+                            <small>${v.address}</small>
+                        </div>
+
+                        <div style="text-align:right">
+                            <div style="color:var(--green);font-size:.8rem">
+                                ● In Stock (${v.stock})
+                            </div>
+
+                            <small>₦${v.pricePerKg}/kg</small>
+                        </div>
+
+                    </div>
+
+                </div>
+            `).join("");
+
+        if (vendors.length > 0) {
+          selectVendor(vendors[0].id);
+        }
+
+      } catch (err) {
+
+        console.error(err);
+
+        Toast.error("Unable to load vendors.");
+
+      }
+
+    }
+    loadVendors();
+
+    async function loadProducts(vendorId) {
+
+      try {
+
+        const response = await fetch(
+          `http://localhost/Kwick_Gas/api/products/list.php?vendor_id=${vendorId}`
+        );
+
+        const result = await response.json();
+
+        if (!result.success) {
+
+          Toast.error(result.message);
+          return;
+
+        }
+
+        products = result.data;
+
+        document.getElementById("cyl-grid").innerHTML =
+          products.map(p => `
+                <div class="cyl-btn"
+                     id="cyl-${p.id}"
+                     onclick="selectCyl(${p.id})">
+
+                    <div class="size">${p.size}</div>
+
+                    <div class="price">
+                        ${fmt.currency(Number(p.price))}
+                    </div>
+
+                </div>
+            `).join("");
+
+        // Automatically select the first cylinder
+        if (products.length > 0) {
+          selectCyl(products[0].id);
+        }
+
+      } catch (err) {
+
+        console.error(err);
+
+        Toast.error("Unable to load products.");
+
+      }
+
+    }
+
+    console.log("Clicked ID:", id);
+    console.log("Selected Vendor:", selectedVendor);
+    loadProducts()
+
+    // Cylinders
+    document.getElementById("cyl-grid").innerHTML = CYLINDERS.map(c => `
+  <div class="cyl-btn" id="cyl-${c.size}" onclick="selectCyl('${c.size}')">
+    <div class="size">${c.size}</div>
+    <div class="price">${fmt.currency(parseFloat(c.size)*c.pricePerKg)}</div>
+  </div>`).join("");
+
+    // Pre-fill address
+    document.getElementById("del-address").value = user.address || "";
+
+    // Wallet balance
+    document.querySelector("#wallet-label small").textContent = "Balance: " + fmt.currency(user.wallet || 0);
+
+    function selectVendor(id) {
+
+      selectedVendor = vendors.find(v => v.id == id);
+
+      document
+        .querySelectorAll(".vendor-card")
+        .forEach(el => el.classList.remove("selected"));
+
+      document
+        .getElementById("vendor-" + id)
+        .classList.add("selected");
+
+      loadProducts(id);
+
+      updateSummary();
+
+    }
+
+    function selectCyl(productId) {
+
+      selectedCyl = products.find(p => p.id == productId);
+
+      document.querySelectorAll(".cyl-btn")
+        .forEach(el => el.classList.remove("selected"));
+
+      const btn = document.getElementById("cyl-" + productId);
+
+      if (btn) {
+        btn.classList.add("selected");
+      }
+
+      updateSummary();
+
+    }
+
+    function changeQty(d) {
+      qty = Math.max(1, Math.min(10, qty + d));
+      document.getElementById("qty-display").textContent = qty;
+      updateSummary();
+    }
+
+    function selectPay(method) {
+      payMethod = method;
+      ["cash", "transfer", "wallet"].forEach(m => {
+        const btn = document.getElementById("pay-" + m);
+
+        if (btn) {
+          btn.classList.toggle("selected", m === method);
+        }
+      });
+    }
+
+    function getTotal() {
+
+      if (!selectedCyl) return 0;
+
+      return (Number(selectedCyl.price) * qty) + DELIVERY_FEE;
+
+    }
+
+    function updateSummary() {
+
+      document.getElementById("sum-vendor").textContent =
+        selectedVendor ? selectedVendor.name : "—";
+
+      document.getElementById("sum-cyl").textContent =
+        selectedCyl ? selectedCyl.size : "—";
+
+      document.getElementById("sum-qty").textContent =
+        qty;
+
+      document.getElementById("sum-unit").textContent =
+        selectedCyl ?
+        fmt.currency(Number(selectedCyl.price)) :
+        "—";
+
+      document.getElementById("sum-total").textContent =
+        selectedCyl ?
+        fmt.currency(getTotal()) :
+        "—";
+
+    }
+
+    function goStep(n) {
+      if (n === 2 && (!selectedVendor || !selectedCyl)) {
+        Toast.warn("Please select a vendor and cylinder size");
+        return;
+      }
+      if (n === 4) buildReview();
+
+      for (let i = 1; i <= 4; i++) {
+        const el = document.getElementById("step-" + i);
+        if (el) el.style.display = i === n ? "" : "none";
+        const dot = document.getElementById("s" + i);
+        if (dot) {
+          dot.className = "step-dot" + (i < n ? " done" : i === n ? " active" : "");
+          dot.textContent = i < n ? "✓" : i;
+        }
+        const line = document.getElementById("l" + i);
+        if (line) line.className = "step-line" + (i < n ? " done" : "");
+      }
+    }
+
+    function buildReview() {
+
+      document.getElementById("review-content").innerHTML = `
+    
+    <div class="summary-row">
+        <span class="text-muted">Vendor</span>
+        <strong>${selectedVendor ? selectedVendor.name : "—"}</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Cylinder</span>
+        <strong>${selectedCyl ? selectedCyl.size : "—"} × ${qty}</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Unit Price</span>
+        <strong>${selectedCyl ? fmt.currency(Number(selectedCyl.price)) : "—"}</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Delivery Fee</span>
+        <strong>${fmt.currency(DELIVERY_FEE)}</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Address</span>
+        <strong>${document.getElementById("del-address").value}</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Time</span>
+        <strong>${
+            document.getElementById("del-time")
+                .options[document.getElementById("del-time").selectedIndex].text
+        }</strong>
+    </div>
+
+    <div class="summary-row">
+        <span class="text-muted">Payment</span>
+        <strong style="text-transform:capitalize">
+            ${payMethod.replace("_", " ")}
+        </strong>
+    </div>
+
+    <div class="summary-row" style="font-size:1.1rem">
+        <span class="font-d fw-700">Total</span>
+        <span class="text-orange font-d fw-700">
+            ${fmt.currency(getTotal())}
+        </span>
+    </div>
+    
+    `;
+
+    }
+
+    async function placeOrder() {
+
+      const address = document.getElementById("del-address").value.trim();
+
+      if (!address) {
+        Toast.error("Please enter delivery address");
+        return;
+      }
+
+      if (!selectedVendor) {
+        Toast.error("No vendor selected.");
+        console.log("selectedVendor:", selectedVendor);
+        return;
+      }
+
+      if (!selectedCyl) {
+        Toast.error("No cylinder selected.");
+        console.log("selectedCyl:", selectedCyl);
+        return;
+      }
+
+      const orderData = {
+        customer_id: Number(user.id),
+        vendor_id: Number(selectedVendor.id),
+        product_id: Number(selectedCyl.id),
+        quantity: Number(qty),
+        delivery_address: address,
+        payment_method: payMethod,
+        notes: document.getElementById("del-note").value.trim()
+      };
+
+      console.log("Current User:", user);
+
+      console.log("========== ORDER DATA ==========");
+      console.table(orderData);
+      console.log("===============================");
+
+      try {
+
+        const response = await fetch(
+          "http://localhost/Kwick_Gas/api/orders/create.php", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(orderData)
+          }
+        );
+
+        console.log("HTTP Status:", response.status);
+
+        const result = await response.json();
+
+        console.log("Server Response:", result);
+
+        if (!response.ok) {
+          Toast.error(result.message || "Request failed.");
+          return;
+        }
+
+        if (!result.success) {
+          Toast.error(result.message);
+          return;
+        }
+
+        Toast.success(
+          "Order placed successfully!\nOrder No: " +
+          result.data.order_number
+        );
+
+        setTimeout(() => {
+          window.location.href = "history.html";
+        }, 1500);
+
+      } catch (err) {
+
+        console.error("Fetch Error:", err);
+
+        Toast.error("Unable to connect to server.");
+
+      }
+
+    }
+  </script>
+</body>
+
+</html>

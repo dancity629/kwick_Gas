@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — AI Assistant</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .chat-layout { display: grid; grid-template-columns: 1fr 280px; gap: 24px; height: calc(100vh - 160px); }
+    .chat-full { display: flex; flex-direction: column; height: 100%; }
+    .chat-window { flex: 1; }
+    .chat-messages { height: 100%; }
+    .suggested-qs { display: flex; flex-direction: column; gap: 8px; }
+    .sugg-btn {
+      background: var(--bg3); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      padding: 10px 12px; text-align: left; color: var(--text2); font-size: .8rem;
+      cursor: pointer; transition: var(--transition); font-family: var(--font-b);
+    }
+    .sugg-btn:hover { border-color: var(--orange); color: var(--orange); background: rgba(255,107,43,0.06); }
+    .chat-meta { padding: 10px 16px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+    .ai-avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--blue), var(--orange)); display: flex; align-items: center; justify-content: center; font-size: .9rem; }
+    @media(max-width:900px) { .chat-layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content" style="display:flex;flex-direction:column">
+    <div id="topbar"></div>
+    <div class="chat-layout" style="flex:1">
+      <div class="chat-full">
+        <div class="chat-window" style="display:flex;flex-direction:column;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;background:var(--bg3);height:100%">
+          <div class="chat-meta">
+            <div class="ai-avatar">🤖</div>
+            <div>
+              <div style="font-weight:600;font-size:.875rem">GasGo AI Assistant</div>
+              <div style="font-size:.72rem;color:var(--green)">● Online</div>
+            </div>
+            <div style="margin-left:auto;display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="clearChat()">🗑 Clear</button>
+              <button class="btn btn-secondary btn-sm" onclick="switchChatLang()">🌐 <span id="chat-lang-label">EN</span></button>
+            </div>
+          </div>
+          <div class="chat-messages" id="chat-messages" style="flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px">
+            <!-- messages here -->
+          </div>
+          <div class="chat-input-row" style="display:flex;gap:8px;padding:12px;border-top:1px solid var(--border);background:var(--bg2)">
+            <input type="text" id="chat-input" class="form-control" placeholder="Ask me anything about gas, your order, safety tips..." style="flex:1" onkeydown="if(event.key==='Enter')sendMessage()">
+            <button class="btn btn-primary" onclick="sendMessage()" id="send-btn">Send</button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card mb-20">
+          <div class="card-header"><h3 class="card-title">💡 Suggested Questions</h3></div>
+          <div class="suggested-qs" id="suggested-qs"></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">📊 My Account</h3></div>
+          <div id="account-quick"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "chat", t("aiAssistant"));
+if (!user) throw 0;
+
+let chatLang = currentLang;
+let conversationHistory = [];
+let isTyping = false;
+
+const suggestions = {
+  en: [
+    "What cylinder size should I get for a family of 4?",
+    "How long does a 12.5kg cylinder last?",
+    "Is my gas order safe?",
+    "What are gas safety tips?",
+    "How do I track my order?",
+    "What payment methods do you accept?",
+    "How does smart refill prediction work?",
+    "What is the emergency gas request?",
+  ],
+  ha: [
+    "Wane girman silinda ya dace da iyali na 4?",
+    "Silinda na 12.5kg na ɗaukar tsawon lokaci nawa?",
+    "Ta yaya zan bin diddigin odana?",
+    "Menene shawarwarin aminci ga gas?",
+    "Ta yaya zan biya?",
+    "Ta yaya tsinkayar cika mai wayo take aiki?",
+  ],
+};
+
+const systemPrompt = `You are GasGo AI Assistant, a helpful and friendly customer support agent for GasGo — a gas cylinder delivery service in Nigeria. 
+
+ABOUT GASGO:
+- Customers can order gas cylinders (3kg, 6kg, 12.5kg, 25kg, 50kg) online
+- Cylinders cost ₦650/kg
+- Delivery takes 15–30 minutes
+- Payment: Cash on Delivery, Bank Transfer, or Wallet
+- Features: Live order tracking, Smart Refill Prediction AI, QR Verification, Emergency gas requests
+- Available in English and Hausa (Hausa)
+
+CURRENT USER CONTEXT:
+- Name: ${user.name}
+- Phone: ${user.phone}
+- Address: ${user.address}
+- Active orders: ${Orders.byCustomer(user.id).filter(o=>o.status!=='delivered'&&o.status!=='cancelled').length}
+- Total orders: ${Orders.byCustomer(user.id).length}
+
+GUIDELINES:
+- Be warm, concise, and helpful
+- Answer in ${chatLang === 'ha' ? 'Hausa (Hausa language)' : 'English'}
+- For gas safety questions, be thorough and clear
+- For order questions, you can reference the user's order history
+- If user asks to book or place an order, direct them to the booking page
+- Keep responses under 150 words unless explaining safety information
+- Use emojis sparingly to keep a professional but friendly tone`;
+
+// Render suggestions
+document.getElementById("suggested-qs").innerHTML = (suggestions[chatLang] || suggestions.en).map(q =>
+  `<button class="sugg-btn" onclick="fillInput('${q.replace(/'/g, "\\'")}')">${q}</button>`
+).join("");
+
+// Account quick view
+const orders = Orders.byCustomer(user.id);
+document.getElementById("account-quick").innerHTML = `
+  <div style="display:flex;flex-direction:column;gap:8px;font-size:.8rem">
+    <div class="flex-between"><span class="text-muted">Total Orders</span><strong>${orders.length}</strong></div>
+    <div class="flex-between"><span class="text-muted">Pending</span><strong>${orders.filter(o=>o.status==='pending').length}</strong></div>
+    <div class="flex-between"><span class="text-muted">Delivered</span><strong>${orders.filter(o=>o.status==='delivered').length}</strong></div>
+    <div class="flex-between"><span class="text-muted">Wallet</span><strong class="text-orange">${fmt.currency(user.wallet||0)}</strong></div>
+  </div>`;
+
+// Initial greeting
+addBotMessage(chatLang === 'ha'
+  ? `Sannu ${user.name}! 👋 Ni ne GasGo AI Assistant. Zan iya taimaka maka da odar gas, tambayoyin aminci, ko komai game da GasGo. Yaya zan iya taimaka maka yau?`
+  : `Hello ${user.name}! 👋 I'm your GasGo AI Assistant. I can help with gas orders, safety tips, tracking, and anything about GasGo. How can I help you today?`
+);
+
+function addBotMessage(text) {
+  const el = document.createElement("div");
+  el.className = "chat-bubble bubble-bot";
+  el.innerHTML = text.replace(/\n/g, "<br>");
+  document.getElementById("chat-messages").appendChild(el);
+  scrollChat();
+}
+
+function addUserMessage(text) {
+  const el = document.createElement("div");
+  el.className = "chat-bubble bubble-user";
+  el.textContent = text;
+  document.getElementById("chat-messages").appendChild(el);
+  scrollChat();
+}
+
+function showTyping() {
+  const el = document.createElement("div");
+  el.className = "chat-bubble bubble-bot";
+  el.id = "typing-indicator";
+  el.innerHTML = `<span class="typing-dots"><span></span><span></span><span></span></span>`;
+  document.getElementById("chat-messages").appendChild(el);
+  scrollChat();
+}
+
+function removeTyping() {
+  document.getElementById("typing-indicator")?.remove();
+}
+
+function scrollChat() {
+  const msgs = document.getElementById("chat-messages");
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function fillInput(text) {
+  document.getElementById("chat-input").value = text;
+  document.getElementById("chat-input").focus();
+}
+
+function clearChat() {
+  conversationHistory = [];
+  document.getElementById("chat-messages").innerHTML = "";
+  addBotMessage(chatLang === 'ha' ? `Yau mun fara sabon tattaunawa. Zan iya taimaka maka ta yaya?` : `Chat cleared! How can I help you?`);
+}
+
+function switchChatLang() {
+  chatLang = chatLang === 'en' ? 'ha' : 'en';
+  document.getElementById("chat-lang-label").textContent = chatLang.toUpperCase();
+  document.getElementById("suggested-qs").innerHTML = (suggestions[chatLang] || suggestions.en).map(q =>
+    `<button class="sugg-btn" onclick="fillInput('${q.replace(/'/g, "\\'")}')">${q}</button>`
+  ).join("");
+}
+
+async function sendMessage() {
+  const input = document.getElementById("chat-input");
+  const text = input.value.trim();
+  if (!text || isTyping) return;
+
+  input.value = "";
+  isTyping = true;
+  document.getElementById("send-btn").disabled = true;
+
+  addUserMessage(text);
+  conversationHistory.push({ role: "user", content: text });
+  showTyping();
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-6",
+        max_tokens: 1000,
+        system: systemPrompt,
+        messages: conversationHistory,
+      }),
+    });
+
+    const data = await response.json();
+    removeTyping();
+
+    const reply = data.content?.[0]?.text || "Sorry, I couldn't process that. Please try again.";
+    conversationHistory.push({ role: "assistant", content: reply });
+    addBotMessage(reply);
+  } catch (err) {
+    removeTyping();
+    addBotMessage("⚠️ I'm having trouble connecting right now. Please check your internet and try again.");
+  }
+
+  isTyping = false;
+  document.getElementById("send-btn").disabled = false;
+  input.focus();
+}
+</script>
+</body>
+</html>

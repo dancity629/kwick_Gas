@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — QR Verification</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .qr-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .qr-display { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 24px; }
+    canvas#qr-canvas { border-radius: 12px; border: 3px solid var(--orange); padding: 10px; background: white; }
+    .scan-area {
+      position: relative;
+      width: 260px; height: 260px;
+      border: 3px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--bg3);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .scan-line {
+      position: absolute;
+      left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, var(--orange), transparent);
+      animation: scanDown 2s ease-in-out infinite;
+    }
+    @keyframes scanDown { 0% { top: 0; } 50% { top: calc(100% - 3px); } 100% { top: 0; } }
+    .corner { position: absolute; width: 24px; height: 24px; border-color: var(--orange); border-style: solid; }
+    .corner.tl { top: 10px; left: 10px; border-width: 3px 0 0 3px; }
+    .corner.tr { top: 10px; right: 10px; border-width: 3px 3px 0 0; }
+    .corner.bl { bottom: 10px; left: 10px; border-width: 0 0 3px 3px; }
+    .corner.br { bottom: 10px; right: 10px; border-width: 0 3px 3px 0; }
+    .verified-state { display:none; text-align:center; padding:32px; }
+    .verify-icon { font-size:5rem; animation:pop .5s ease; }
+    @keyframes pop { 0%{transform:scale(0)} 80%{transform:scale(1.1)} 100%{transform:scale(1)} }
+    .order-card-pick {
+      padding: 12px; background: var(--bg3); border: 2px solid var(--border);
+      border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition); margin-bottom: 8px;
+    }
+    .order-card-pick:hover { border-color: var(--orange); }
+    .order-card-pick.selected { border-color: var(--orange); background: rgba(255,107,43,0.06); }
+    @media(max-width:900px) { .qr-layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div class="qr-layout">
+      <!-- Left: Order selection & customer QR -->
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">📦 Select Delivery</h3></div>
+        <div id="order-select-list"></div>
+        <div id="qr-display-section" style="display:none">
+          <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+          <h4 style="margin-bottom:12px">Customer's QR Code</h4>
+          <p style="font-size:.8rem;color:var(--text3);margin-bottom:16px">Show this code to the customer or scan theirs to confirm delivery.</p>
+          <div class="qr-display">
+            <canvas id="qr-canvas" width="200" height="200"></canvas>
+            <div id="qr-order-label" style="font-size:.8rem;color:var(--text3)"></div>
+          </div>
+          <button class="btn btn-primary btn-full" onclick="showScanState()" id="scan-to-confirm">
+            📷 Scan to Confirm Delivery
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: Scanner + Confirm -->
+      <div class="card">
+        <div id="scan-instructions" style="text-align:center;padding:20px">
+          <div style="font-size:3rem;margin-bottom:12px">📷</div>
+          <h3>QR Delivery Verification</h3>
+          <p>Select an order on the left, then confirm delivery with QR scan.</p>
+        </div>
+
+        <div id="scan-state" style="display:none">
+          <div class="card-header"><h3 class="card-title">📷 Scan Customer QR</h3></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px">
+            <div class="scan-area">
+              <div class="scan-line"></div>
+              <div class="corner tl"></div>
+              <div class="corner tr"></div>
+              <div class="corner bl"></div>
+              <div class="corner br"></div>
+              <div style="text-align:center;color:var(--text3);z-index:1">
+                <div style="font-size:2rem">📷</div>
+                <div style="font-size:.75rem;margin-top:8px">Scanning...</div>
+              </div>
+            </div>
+            <p style="font-size:.8rem;text-align:center">Align the customer's QR code within the frame</p>
+            <button class="btn btn-primary btn-full" id="simulate-scan-btn" onclick="simulateScan()">
+              ✅ Simulate Successful Scan
+            </button>
+            <div style="font-size:.75rem;color:var(--text3)">or enter code manually:</div>
+            <div style="display:flex;gap:8px;width:100%">
+              <input type="text" id="manual-code" class="form-control" placeholder="Enter QR code" style="flex:1">
+              <button class="btn btn-secondary" onclick="manualVerify()">Verify</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="verified-state" id="verified-state">
+          <div class="verify-icon">✅</div>
+          <h2 style="margin:16px 0 8px;color:var(--green)">Delivery Confirmed!</h2>
+          <p id="verify-msg">Order successfully verified and marked as delivered.</p>
+          <div id="verify-details" style="margin:20px 0;padding:16px;background:var(--bg3);border-radius:var(--radius-sm);text-align:left;font-size:.85rem"></div>
+          <div style="display:flex;gap:12px;justify-content:center">
+            <button class="btn btn-primary" onclick="resetVerify()">Next Delivery</button>
+            <a href="dashboard.html" class="btn btn-secondary">Dashboard</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("rider", "qrscan", t("scanQR"));
+if (!user) throw 0;
+
+let selectedOrder = null;
+
+const myOrders = Orders.byRider(user.id).filter(o => o.status === "in_transit" || o.status === "pending");
+
+document.getElementById("order-select-list").innerHTML = myOrders.length === 0
+  ? `<div class="empty-state"><div class="empty-icon">📦</div><p>No active deliveries to confirm</p><a href="deliveries.html" class="btn btn-secondary btn-sm" style="margin-top:12px">View All</a></div>`
+  : myOrders.map(o=>`
+    <div class="order-card-pick" id="pick-${o.id}" onclick="selectOrder('${o.id}')">
+      <div class="flex-between">
+        <div>
+          <div style="font-weight:600;font-size:.875rem">#${o.id.slice(-4).toUpperCase()} · ${o.cylinder}</div>
+          <div style="font-size:.78rem;color:var(--text3)">👤 ${o.customerName}</div>
+          <div style="font-size:.78rem;color:var(--text3)">📍 ${o.address}</div>
+        </div>
+        ${fmt.statusBadge(o.status)}
+      </div>
+    </div>`).join("");
+
+// Auto-select if order in URL
+const urlOrder = new URLSearchParams(location.search).get("order");
+if (urlOrder) selectOrder(urlOrder);
+
+function selectOrder(id) {
+  selectedOrder = Orders.get(id);
+  if (!selectedOrder) return;
+
+  document.querySelectorAll(".order-card-pick").forEach(el => el.classList.remove("selected"));
+  document.getElementById("pick-"+id)?.classList.add("selected");
+  document.getElementById("qr-display-section").style.display = "";
+  document.getElementById("scan-instructions").style.display = "none";
+
+  // Render QR
+  generateQR(selectedOrder.qrCode, document.getElementById("qr-canvas"));
+  document.getElementById("qr-order-label").textContent = `QR Code: ${selectedOrder.qrCode.toUpperCase()}`;
+  document.getElementById("manual-code").value = selectedOrder.qrCode;
+}
+
+function showScanState() {
+  if (!selectedOrder) return;
+  document.getElementById("scan-state").style.display = "";
+  document.getElementById("scan-instructions").style.display = "none";
+}
+
+function simulateScan() {
+  if (!selectedOrder) return;
+  verifyDelivery(selectedOrder.qrCode);
+}
+
+function manualVerify() {
+  const code = document.getElementById("manual-code").value.trim();
+  if (!code) { Toast.error("Enter a QR code"); return; }
+  if (!selectedOrder || code !== selectedOrder.qrCode) {
+    Toast.error("Invalid QR code. Code does not match this order.");
+    return;
+  }
+  verifyDelivery(code);
+}
+
+function verifyDelivery(code) {
+  Orders.deliver(selectedOrder.id);
+  const order = Orders.get(selectedOrder.id);
+
+  document.getElementById("scan-state").style.display = "none";
+  document.getElementById("verified-state").style.display = "";
+
+  document.getElementById("verify-details").innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="flex-between"><span class="text-muted">Order</span><strong>#${order.id.slice(-4).toUpperCase()}</strong></div>
+      <div class="flex-between"><span class="text-muted">Customer</span><strong>${order.customerName}</strong></div>
+      <div class="flex-between"><span class="text-muted">Cylinder</span><strong>${order.cylinder} × ${order.quantity}</strong></div>
+      <div class="flex-between"><span class="text-muted">Address</span><strong>${order.address}</strong></div>
+      <div class="flex-between"><span class="text-muted">Total</span><strong class="text-orange">${fmt.currency(order.total)}</strong></div>
+      <div class="flex-between"><span class="text-muted">Time</span><strong>${fmt.time(new Date().toISOString())}</strong></div>
+    </div>`;
+
+  Toast.success("Delivery confirmed and recorded!");
+}
+
+function resetVerify() {
+  selectedOrder = null;
+  document.getElementById("verified-state").style.display = "none";
+  document.getElementById("scan-state").style.display = "none";
+  document.getElementById("qr-display-section").style.display = "none";
+  document.getElementById("scan-instructions").style.display = "";
+  document.querySelectorAll(".order-card-pick").forEach(el => el.classList.remove("selected"));
+  location.reload();
+}
+</script>
+</body>
+</html>

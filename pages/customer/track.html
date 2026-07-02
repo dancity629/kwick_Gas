@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Track Order</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .track-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+    .map-placeholder {
+      height: 280px; background: var(--bg3); border: 1px solid var(--border);
+      border-radius: var(--radius); display: flex; align-items: center; justify-content: center;
+      flex-direction: column; gap: 8px; color: var(--text3); overflow: hidden; position: relative;
+    }
+    .map-grid {
+      position: absolute; inset: 0;
+      background-image: linear-gradient(var(--border) 1px, transparent 1px),
+                        linear-gradient(90deg, var(--border) 1px, transparent 1px);
+      background-size: 40px 40px;
+      opacity: 0.4;
+    }
+    .rider-dot {
+      position: absolute; width: 16px; height: 16px; border-radius: 50%;
+      background: var(--orange); border: 3px solid white;
+      box-shadow: 0 0 0 6px rgba(255,107,43,0.2);
+      animation: riderMove 3s ease-in-out infinite alternate;
+    }
+    @keyframes riderMove { from { transform: translate(100px, 80px); } to { transform: translate(160px, 120px); } }
+    .dest-dot { position: absolute; font-size: 1.5rem; top: 60%; right: 30%; }
+    .order-select-list { display: flex; flex-direction: column; gap: 8px; }
+    .order-pick {
+      padding: 12px 16px; background: var(--bg3); border: 2px solid var(--border);
+      border-radius: var(--radius-sm); cursor: pointer; transition: var(--transition);
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .order-pick:hover { border-color: var(--orange2); }
+    .order-pick.selected { border-color: var(--orange); background: rgba(255,107,43,0.06); }
+    @media(max-width:900px) { .track-layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div id="order-picker" style="margin-bottom:24px">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">📦 Select Order to Track</h3></div>
+        <div class="order-select-list" id="order-list"></div>
+      </div>
+    </div>
+
+    <div id="track-panel" style="display:none">
+      <div class="track-layout mb-28">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="card-title" id="track-order-id">Order #----</h3>
+              <small id="track-order-date"></small>
+            </div>
+            <div id="track-status-badge"></div>
+          </div>
+
+          <div class="timeline" id="track-timeline"></div>
+
+          <div style="margin-top:20px;padding:14px;background:var(--bg3);border-radius:var(--radius-sm)" id="rider-info"></div>
+        </div>
+
+        <div>
+          <div class="map-placeholder mb-20">
+            <div class="map-grid"></div>
+            <div class="rider-dot" id="rider-marker"></div>
+            <div class="dest-dot">🏠</div>
+            <div style="position:absolute;bottom:12px;left:12px;background:var(--bg2);padding:6px 12px;border-radius:var(--radius-sm);font-size:.78rem;border:1px solid var(--border)">
+              <span style="color:var(--orange)">●</span> Rider &nbsp; 🏠 You
+            </div>
+          </div>
+          <div class="card card-sm">
+            <div class="flex-between">
+              <div>
+                <div class="stat-label">Estimated Arrival</div>
+                <div class="stat-value" style="font-size:1.3rem;color:var(--orange)" id="track-eta">~20 min</div>
+              </div>
+              <div style="text-align:right">
+                <div class="stat-label">Order Total</div>
+                <div class="stat-value" style="font-size:1.3rem" id="track-total">—</div>
+              </div>
+              <div style="text-align:right">
+                <div class="stat-label">Payment</div>
+                <div style="font-size:.85rem;text-transform:capitalize" id="track-pay">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex gap-12">
+        <button class="btn btn-secondary" onclick="document.getElementById('track-panel').style.display='none';document.getElementById('order-picker').style.display=''">← Back to Orders</button>
+        <button class="btn btn-primary" onclick="window.location.href='book.html'">🛒 New Order</button>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "track", t("trackOrder"));
+if (!user) throw 0;
+
+const activeOrders = Orders.byCustomer(user.id).filter(o => o.status !== "cancelled");
+
+if (activeOrders.length === 0) {
+  document.getElementById("order-list").innerHTML = `
+    <div class="empty-state">
+      <div class="empty-icon">📦</div>
+      <p>${t("noOrders")}</p>
+      <a href="book.html" class="btn btn-primary btn-sm mt-16" style="margin-top:12px">Book Gas Now</a>
+    </div>`;
+} else {
+  document.getElementById("order-list").innerHTML = activeOrders.reverse().map(o => `
+    <div class="order-pick" onclick="showTracking('${o.id}')">
+      <div>
+        <div style="font-weight:600;font-size:.9rem">${t("orderNo")}${o.id.slice(-4).toUpperCase()} · ${o.cylinder} × ${o.quantity}</div>
+        <small>${fmt.date(o.createdAt)}</small>
+      </div>
+      <div style="text-align:right">
+        ${fmt.statusBadge(o.status)}
+        <div style="font-size:.8rem;color:var(--orange);margin-top:4px">${fmt.currency(o.total)}</div>
+      </div>
+    </div>`).join("");
+}
+
+// Auto-load if order param in URL
+const urlOrder = new URLSearchParams(location.search).get("order");
+if (urlOrder) showTracking(urlOrder);
+
+function showTracking(orderId) {
+  document.querySelectorAll(".order-pick").forEach(el => el.classList.remove("selected"));
+  const order = Orders.get(orderId);
+  if (!order) return;
+
+  document.getElementById("order-picker").style.display = "none";
+  document.getElementById("track-panel").style.display = "";
+
+  document.getElementById("track-order-id").textContent = `${t("orderNo")}${order.id.slice(-4).toUpperCase()}`;
+  document.getElementById("track-order-date").textContent = `Placed ${fmt.date(order.createdAt)} at ${fmt.time(order.createdAt)}`;
+  document.getElementById("track-status-badge").innerHTML = fmt.statusBadge(order.status);
+  document.getElementById("track-total").textContent = fmt.currency(order.total);
+  document.getElementById("track-pay").textContent = order.paymentMethod.replace("_"," ");
+
+  const steps = [
+    { key: "placed",     label: "Order Placed",       time: order.createdAt },
+    { key: "confirmed",  label: "Order Confirmed",     time: order.createdAt },
+    { key: "in_transit", label: "Rider On the Way",    time: order.status !== "pending" ? order.createdAt : null },
+    { key: "delivered",  label: "Delivered",            time: order.deliveredAt || null },
+  ];
+  const statusOrder = ["pending","confirmed","in_transit","delivered"];
+  const currentIdx = statusOrder.indexOf(order.status);
+
+  document.getElementById("track-timeline").innerHTML = steps.map((step, i) => {
+    const done = i <= currentIdx;
+    const active = i === currentIdx;
+    const isLast = i === steps.length - 1;
+    return `
+      <div class="timeline-step">
+        <div class="timeline-line">
+          <div class="timeline-dot ${done ? (active ? 'active' : 'done') : ''}"></div>
+          ${!isLast ? `<div class="timeline-connector ${i < currentIdx ? 'done' : ''}"></div>` : ''}
+        </div>
+        <div class="timeline-content">
+          <h4 style="color:${done ? 'var(--text)' : 'var(--text3)'}">${step.label}</h4>
+          <small>${step.time ? fmt.date(step.time) + " " + fmt.time(step.time) : "Pending..."}</small>
+        </div>
+      </div>`;
+  }).join("");
+
+  const riderInfoEl = document.getElementById("rider-info");
+  if (order.riderId && order.status === "in_transit") {
+    document.getElementById("track-eta").textContent = "~" + (Math.floor(Math.random()*15)+5) + " min";
+    riderInfoEl.innerHTML = `
+      <div class="flex gap-12" style="align-items:center">
+        <div class="avatar">${(order.riderName||"R").charAt(0)}</div>
+        <div>
+          <div style="font-weight:600">${order.riderName || "Your Rider"}</div>
+          <div style="font-size:.8rem;color:var(--text3)">🏍 Rider · On the way</div>
+        </div>
+        <a href="tel:+2348098765432" class="btn btn-secondary btn-sm" style="margin-left:auto">📞 Call</a>
+      </div>`;
+  } else if (order.status === "delivered") {
+    document.getElementById("track-eta").textContent = "Delivered";
+    document.getElementById("rider-marker").style.display = "none";
+    riderInfoEl.innerHTML = `<div class="text-green" style="font-weight:600">✅ Order successfully delivered!</div>`;
+  } else {
+    document.getElementById("track-eta").textContent = "Awaiting rider";
+    riderInfoEl.innerHTML = `<div style="color:var(--text3);font-size:.85rem">⏳ Your order is being processed. A rider will be assigned shortly.</div>`;
+  }
+}
+</script>
+</body>
+</html>

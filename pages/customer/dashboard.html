@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Customer Dashboard</title>
+  <link rel="stylesheet" href="../../css/style.css">
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+    <div id="refill-alert" style="display:none" class="card" style="border-color:var(--orange);background:rgba(255,107,43,0.08);margin-bottom:20px">
+      <div class="flex-between">
+        <div class="flex gap-8"><span style="font-size:1.3rem">⚠️</span><div><strong id="alert-text"></strong><br><small id="alert-sub"></small></div></div>
+        <a href="book.html" class="btn btn-primary btn-sm">Book Now</a>
+      </div>
+    </div>
+
+    <div class="stats-grid" id="stats-grid"></div>
+
+    <div class="grid-2 mb-28">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">⛽ Smart Refill Status</h3>
+          <a href="refill.html" class="btn btn-secondary btn-sm">Details</a>
+        </div>
+        <div id="refill-gauge" style="text-align:center;padding:12px 0"></div>
+        <div id="refill-info" style="margin-top:16px"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">📦 Recent Orders</h3>
+          <a href="history.html" class="btn btn-secondary btn-sm">All Orders</a>
+        </div>
+        <div id="recent-orders"></div>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">⚡ Quick Actions</h3></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+          <a href="book.html" class="btn btn-primary" style="flex-direction:column;gap:6px;padding:20px;height:auto">
+            <span style="font-size:1.5rem">🛒</span><span>Book Gas</span>
+          </a>
+          <a href="track.html" class="btn btn-secondary" style="flex-direction:column;gap:6px;padding:20px;height:auto">
+            <span style="font-size:1.5rem">📍</span><span>Track Order</span>
+          </a>
+          <a href="chat.html" class="btn btn-secondary" style="flex-direction:column;gap:6px;padding:20px;height:auto">
+            <span style="font-size:1.5rem">🤖</span><span>AI Assistant</span>
+          </a>
+          <a href="emergency.html" class="btn btn-emergency" style="flex-direction:column;gap:6px;padding:20px;height:auto">
+            <span style="font-size:1.5rem">🚨</span><span>Emergency</span>
+          </a>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">🔔 Notifications</h3></div>
+        <div id="notif-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "dashboard", "Dashboard");
+if (user) {
+  // Stats
+  const orders = Orders.byCustomer(user.id);
+  const stats = [
+    { icon: "📦", value: orders.length, label: t("totalOrders") },
+    { icon: "⏳", value: orders.filter(o=>o.status==="pending").length, label: t("pending") },
+    { icon: "✅", value: orders.filter(o=>o.status==="delivered").length, label: t("delivered") },
+    { icon: "💰", value: fmt.currency(user.wallet || 0), label: "Wallet Balance" },
+  ];
+  document.getElementById("stats-grid").innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <span class="stat-icon">${s.icon}</span>
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-label">${s.label}</div>
+    </div>`).join("");
+
+  // Smart Refill
+  const pred = SmartRefill.predict(user.id);
+  if (pred) {
+    renderGauge(pred.pctUsed, "refill-gauge");
+    document.getElementById("refill-info").innerHTML = `
+      <div class="flex-between mb-20" style="margin-bottom:12px">
+        <div><div class="stat-value" style="font-size:1.4rem;color:${pred.daysLeft<=5?'var(--red)':'var(--green)'}">${pred.daysLeft}</div><div class="stat-label">${t("daysLeft")}</div></div>
+        <div><div class="stat-value" style="font-size:1.4rem">${pred.cylinderSize}</div><div class="stat-label">${t("cylinder")}</div></div>
+        <div><div class="stat-value" style="font-size:1.4rem">${pred.avgDaysPerCylinder}d</div><div class="stat-label">Avg Usage</div></div>
+      </div>
+      <div class="progress-bar"><div class="progress-fill ${pred.pctUsed>=75?'high':''}" style="width:${pred.pctUsed}%"></div></div>`;
+
+    if (pred.refillSoon) {
+      const alertEl = document.getElementById("refill-alert");
+      alertEl.style.display = "";
+      alertEl.style.borderColor = "var(--orange)";
+      alertEl.style.background = "rgba(255,107,43,0.08)";
+      document.getElementById("alert-text").textContent = t("refillAlert");
+      document.getElementById("alert-sub").textContent = `Only ${pred.daysLeft} days of gas remaining`;
+    }
+  } else {
+    document.getElementById("refill-gauge").innerHTML = `<div class="empty-state"><div class="empty-icon">🔮</div><p>Place your first order to enable prediction</p></div>`;
+  }
+
+  // Recent orders
+  const recent = orders.slice(-4).reverse();
+  document.getElementById("recent-orders").innerHTML = recent.length === 0
+    ? `<div class="empty-state"><div class="empty-icon">📦</div><p>${t("noOrders")}</p><a href="book.html" class="btn btn-primary btn-sm mt-16">Book Now</a></div>`
+    : recent.map(o => `
+      <div class="flex-between" style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-size:.875rem;font-weight:600">${t("orderNo")}${o.id.slice(-4).toUpperCase()} · ${o.cylinder}</div>
+          <small>${fmt.date(o.createdAt)}</small>
+        </div>
+        <div style="text-align:right">
+          ${fmt.statusBadge(o.status)}<br>
+          <small class="text-orange">${fmt.currency(o.total)}</small>
+        </div>
+      </div>`).join("");
+
+  // Notifications
+  const notifs = Notifications.forUser(user.id).slice(0, 5);
+  document.getElementById("notif-list").innerHTML = notifs.length === 0
+    ? `<div class="empty-state" style="padding:24px"><p>No notifications</p></div>`
+    : notifs.map(n => `
+      <div style="display:flex;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:1rem;margin-top:2px">${n.read?'🔔':'🔴'}</span>
+        <div><div style="font-size:.8rem;color:var(--text);margin-bottom:2px">${n.message}</div><small>${fmt.date(n.createdAt)}</small></div>
+      </div>`).join("");
+}
+</script>
+</body>
+</html>

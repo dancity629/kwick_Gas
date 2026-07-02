@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GasGo — Smart Refill</title>
+  <link rel="stylesheet" href="../../css/style.css">
+  <style>
+    .refill-hero { background: linear-gradient(135deg, var(--bg2), var(--bg3)); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; margin-bottom: 24px; display: flex; align-items: center; gap: 40px; }
+    .refill-visual { flex-shrink: 0; }
+    .refill-info { flex: 1; }
+    .usage-timeline { position: relative; height: 60px; background: var(--bg3); border-radius: var(--radius-sm); overflow: hidden; margin: 20px 0; }
+    .usage-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, var(--green), var(--yellow), var(--red)); transition: width 0.8s ease; }
+    .usage-marker { position: absolute; top: 0; bottom: 0; width: 3px; background: white; opacity: 0.8; }
+    .usage-label { position: absolute; bottom: -22px; font-size: .65rem; color: var(--text3); transform: translateX(-50%); }
+    .notif-prefs { display: flex; flex-direction: column; gap: 12px; }
+    .notif-row { display: flex; align-items: center; justify-content: space-between; padding: 14px; background: var(--bg3); border-radius: var(--radius-sm); }
+    .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 12px; cursor: pointer; transition: var(--transition); }
+    .toggle input:checked + .toggle-slider { background: var(--orange); }
+    .toggle-slider::before { content: ""; position: absolute; height: 18px; width: 18px; left: 3px; top: 3px; background: white; border-radius: 50%; transition: var(--transition); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+    .hist-bar { display: flex; gap: 4px; align-items: flex-end; height: 80px; }
+    .hist-col { flex: 1; background: rgba(255,107,43,0.3); border-radius: 4px 4px 0 0; transition: background .2s; cursor: pointer; }
+    .hist-col:hover { background: var(--orange); }
+  </style>
+</head>
+<body>
+<div class="page">
+  <aside class="sidebar" id="sidebar"></aside>
+  <main class="main-content">
+    <div id="topbar"></div>
+
+    <div id="no-data" style="display:none">
+      <div class="card" style="text-align:center;padding:48px">
+        <div style="font-size:3rem;margin-bottom:16px">🔮</div>
+        <h2 style="margin-bottom:12px">Smart Refill Not Active Yet</h2>
+        <p>Place your first order to activate AI-powered refill prediction.</p>
+        <a href="book.html" class="btn btn-primary" style="margin-top:24px">Book First Order</a>
+      </div>
+    </div>
+
+    <div id="refill-content">
+      <div class="refill-hero">
+        <div class="refill-visual" id="main-gauge"></div>
+        <div class="refill-info">
+          <div class="badge badge-orange" style="margin-bottom:12px">🔮 AI Prediction Active</div>
+          <h2 style="margin-bottom:8px">Your gas is <span id="status-text" class="text-orange">running out</span></h2>
+          <p id="pred-summary" style="margin-bottom:16px">—</p>
+          <div style="display:flex;gap:24px;flex-wrap:wrap">
+            <div><div class="stat-value" id="days-left-big" style="font-size:2rem">—</div><div class="stat-label">${t("daysLeft")}</div></div>
+            <div><div class="stat-value" style="font-size:2rem" id="avg-display">—</div><div class="stat-label">Avg Days/Cylinder</div></div>
+            <div><div class="stat-value" style="font-size:2rem" id="cyl-display">—</div><div class="stat-label">Cylinder Size</div></div>
+          </div>
+          <div id="alert-box" style="display:none;margin-top:20px;padding:14px;border-radius:var(--radius-sm);background:rgba(255,69,0,0.1);border:1px solid rgba(255,69,0,0.3)">
+            <strong class="text-red">⚠️ Low Gas Alert</strong>
+            <p style="margin-top:4px;font-size:.85rem">${t("refillAlert")}</p>
+            <a href="book.html" class="btn btn-primary btn-sm" style="margin-top:12px">Book Refill Now</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-2 mb-28">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">📅 Usage Timeline</h3></div>
+          <p style="font-size:.85rem;margin-bottom:16px">Visual estimate of current cylinder usage from last refill to predicted empty.</p>
+          <div class="usage-timeline" id="usage-timeline">
+            <div class="usage-fill" id="usage-fill"></div>
+            <div class="usage-marker" id="today-marker"></div>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:.8rem;font-weight:600;color:white;pointer-events:none" id="usage-label-center"></div>
+          </div>
+          <div style="margin-top:28px;display:flex;justify-content:space-between">
+            <small>Last Refill</small>
+            <small style="color:var(--orange)">Today</small>
+            <small style="color:var(--red)">Estimated Empty</small>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">📊 Order History (Last 6)</h3></div>
+          <p style="font-size:.85rem;margin-bottom:16px">Days between each refill order.</p>
+          <div class="hist-bar" id="hist-bar"></div>
+          <div style="margin-top:8px;display:flex;gap:4px" id="hist-labels"></div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">⚙️ Update Usage Profile</h3></div>
+          <div class="form-group">
+            <label>Cylinder Size</label>
+            <select class="form-control" id="pref-cyl">
+              <option value="3kg">3kg</option>
+              <option value="6kg">6kg</option>
+              <option value="12.5kg" selected>12.5kg</option>
+              <option value="25kg">25kg</option>
+              <option value="50kg">50kg</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Household Size</label>
+            <select class="form-control" id="pref-household">
+              <option value="1">1 person (~30 days)</option>
+              <option value="2">2–3 people (~20 days)</option>
+              <option value="4" selected>4–5 people (~15 days)</option>
+              <option value="6">6+ people (~10 days)</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="saveProfile()">Save Profile</button>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">🔔 Refill Notifications</h3></div>
+          <div class="notif-prefs">
+            <div class="notif-row">
+              <div><div style="font-size:.875rem;font-weight:600">Alert at 5 days left</div><small>Get notified when gas is almost out</small></div>
+              <label class="toggle"><input type="checkbox" checked id="notif-5"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="notif-row">
+              <div><div style="font-size:.875rem;font-weight:600">Alert at 3 days left</div><small>Final warning before empty</small></div>
+              <label class="toggle"><input type="checkbox" checked id="notif-3"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="notif-row">
+              <div><div style="font-size:.875rem;font-weight:600">Weekly usage report</div><small>Summary every Sunday</small></div>
+              <label class="toggle"><input type="checkbox" id="notif-weekly"><span class="toggle-slider"></span></label>
+            </div>
+            <div class="notif-row">
+              <div><div style="font-size:.875rem;font-weight:600">Auto-book suggestion</div><small>Remind me to reorder</small></div>
+              <label class="toggle"><input type="checkbox" checked id="notif-auto"><span class="toggle-slider"></span></label>
+            </div>
+          </div>
+          <button class="btn btn-secondary btn-sm" style="margin-top:16px" onclick="Toast.success('Notification preferences saved!')">Save Preferences</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+const user = initPage("customer", "refill", t("smartRefill"));
+if (!user) throw 0;
+
+const pred = SmartRefill.predict(user.id);
+if (!pred) {
+  document.getElementById("no-data").style.display = "";
+  document.getElementById("refill-content").style.display = "none";
+} else {
+  renderGauge(pred.pctUsed, "main-gauge");
+  document.getElementById("days-left-big").textContent = pred.daysLeft;
+  document.getElementById("avg-display").textContent = pred.avgDaysPerCylinder + "d";
+  document.getElementById("cyl-display").textContent = pred.cylinderSize;
+  document.getElementById("pred-summary").textContent =
+    `Based on your average usage of ${pred.avgDaysPerCylinder} days per cylinder, your current ${pred.cylinderSize} cylinder is approximately ${pred.pctUsed}% used.`;
+
+  if (pred.daysLeft <= 5) {
+    document.getElementById("status-text").textContent = "running low";
+    document.getElementById("alert-box").style.display = "";
+  } else if (pred.daysLeft <= 10) {
+    document.getElementById("status-text").textContent = "at mid-level";
+    document.getElementById("status-text").style.color = "var(--yellow)";
+  } else {
+    document.getElementById("status-text").textContent = "doing fine";
+    document.getElementById("status-text").style.color = "var(--green)";
+  }
+
+  // Usage timeline
+  const pct = pred.pctUsed;
+  const todayPct = pct;
+  document.getElementById("usage-fill").style.width = "100%";
+  document.getElementById("today-marker").style.left = todayPct + "%";
+  document.getElementById("usage-label-center").textContent = pct + "% used";
+
+  // History bars
+  const orders = Orders.byCustomer(user.id).filter(o=>o.status==="delivered").slice(-6);
+  const days = orders.map((_,i,arr) => {
+    if (i === 0) return pred.avgDaysPerCylinder;
+    const diff = (new Date(arr[i].createdAt) - new Date(arr[i-1].createdAt)) / 86400000;
+    return Math.round(Math.abs(diff));
+  });
+  const maxD = Math.max(...days, 1);
+  document.getElementById("hist-bar").innerHTML = days.map((d,i)=>`
+    <div class="hist-col" style="height:${Math.round((d/maxD)*100)}%" title="${d} days"></div>`).join("");
+  document.getElementById("hist-labels").innerHTML = days.map((_,i)=>`<div style="flex:1;font-size:.65rem;color:var(--text3);text-align:center">O${i+1}</div>`).join("");
+
+  document.getElementById("pref-cyl").value = pred.cylinderSize || "12.5kg";
+}
+
+function saveProfile() {
+  const cyl = document.getElementById("pref-cyl").value;
+  const house = parseInt(document.getElementById("pref-household").value);
+  const avgDays = { 1: 30, 2: 20, 4: 15, 6: 10 }[house] || 20;
+  const all = JSON.parse(localStorage.getItem("gasgo_refill_data") || "{}");
+  all[user.id] = { ...(all[user.id]||{}), cylinderSize: cyl, avgDaysPerCylinder: avgDays, lastRefill: all[user.id]?.lastRefill || new Date().toISOString() };
+  localStorage.setItem("gasgo_refill_data", JSON.stringify(all));
+  Toast.success("Usage profile updated!");
+  setTimeout(() => location.reload(), 800);
+}
+</script>
+</body>
+</html>

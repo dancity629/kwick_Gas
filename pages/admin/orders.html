@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Orders – GasGo Admin</title>
+<link rel="stylesheet" href="../../css/style.css"/>
+<style>
+.toolbar{display:flex;gap:.75rem;flex-wrap:wrap;align-items:center;margin-bottom:1.5rem}
+.toolbar input,.toolbar select{flex:1;min-width:140px;max-width:220px;padding:.55rem .75rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.85rem}
+.toolbar input:focus,.toolbar select:focus{outline:none;border-color:var(--primary)}
+.orders-table{width:100%;border-collapse:collapse}
+.orders-table th{text-align:left;font-size:.78rem;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);padding:.6rem .75rem;border-bottom:1px solid var(--border)}
+.orders-table td{padding:.75rem;border-bottom:1px solid var(--border);font-size:.85rem;color:var(--text-secondary)}
+.orders-table tr:last-child td{border-bottom:none}
+.orders-table tr:hover td{background:var(--surface-raised)}
+.orders-table .id{font-family:monospace;font-size:.78rem;color:var(--text-muted)}
+.action-btns{display:flex;gap:.4rem;flex-wrap:wrap}
+.summary-bar{display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.25rem}
+.summary-chip{background:var(--surface-raised);border:1px solid var(--border);border-radius:99px;padding:.3rem .85rem;font-size:.8rem;color:var(--text-secondary)}
+.summary-chip strong{color:var(--text-primary)}
+.assign-select{padding:.35rem .6rem;background:var(--surface-raised);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-primary);font-size:.8rem;cursor:pointer}
+</style>
+</head>
+<body>
+<div class="app-layout" id="appLayout"></div>
+<script src="../../js/store.js"></script>
+<script src="../../js/ui.js"></script>
+<script>
+initPage('admin','orders','Order Management');
+const main = document.getElementById('mainContent');
+
+let filterStatus = 'all', filterSearch = '', filterVendor = 'all';
+let page = 1; const PER_PAGE = 15;
+
+function getFiltered(){
+  let list = Orders.all();
+  if(filterStatus!=='all') list=list.filter(o=>o.status===filterStatus);
+  if(filterVendor!=='all') list=list.filter(o=>o.vendorId===filterVendor);
+  if(filterSearch){
+    const q=filterSearch.toLowerCase();
+    list=list.filter(o=>o.id.toLowerCase().includes(q)||
+      (Users.find(o.customerId)?.name||'').toLowerCase().includes(q)||
+      (o.cylinderSize||'').toLowerCase().includes(q)||
+      (o.address||'').toLowerCase().includes(q)
+    );
+  }
+  return list.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));
+}
+
+function render(){
+  const all = Orders.all();
+  const vendors = Vendors.all();
+  const riders = Users.all().filter(u=>u.role==='rider');
+  const filtered = getFiltered();
+  const total=filtered.length, pages=Math.max(1,Math.ceil(total/PER_PAGE));
+  if(page>pages) page=pages;
+  const slice = filtered.slice((page-1)*PER_PAGE, page*PER_PAGE);
+
+  const counts={pending:0,confirmed:0,transit:0,delivered:0,cancelled:0};
+  all.forEach(o=>{ if(counts[o.status]!==undefined) counts[o.status]++; });
+
+  main.innerHTML = `
+  <div class="summary-bar">
+    <div class="summary-chip">All <strong>${all.length}</strong></div>
+    <div class="summary-chip">Pending <strong style="color:#f59e0b">${counts.pending}</strong></div>
+    <div class="summary-chip">Confirmed <strong style="color:#6366f1">${counts.confirmed}</strong></div>
+    <div class="summary-chip">In Transit <strong style="color:var(--primary)">${counts.transit}</strong></div>
+    <div class="summary-chip">Delivered <strong style="color:#22c55e">${counts.delivered}</strong></div>
+    <div class="summary-chip">Cancelled <strong style="color:#ef4444">${counts.cancelled}</strong></div>
+  </div>
+
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search orders, customers…" value="${filterSearch}"/>
+    <select id="statusFilter">
+      <option value="all">All Status</option>
+      <option value="pending">Pending</option>
+      <option value="confirmed">Confirmed</option>
+      <option value="transit">In Transit</option>
+      <option value="delivered">Delivered</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+    <select id="vendorFilter">
+      <option value="all">All Vendors</option>
+      ${vendors.map(v=>`<option value="${v.id}">${v.name}</option>`).join('')}
+    </select>
+    <button class="btn btn-ghost btn-sm" onclick="exportCSV()">⬇ Export CSV</button>
+  </div>
+
+  <div class="card" style="padding:0;overflow:auto">
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th>Order ID</th>
+          <th>Customer</th>
+          <th>Vendor</th>
+          <th>Cylinder</th>
+          <th>Total</th>
+          <th>Status</th>
+          <th>Rider</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${slice.length ? slice.map(o=>{
+          const cust = Users.find(o.customerId);
+          const vendor = vendors.find(v=>v.id===o.vendorId);
+          const rider = o.riderId ? Users.find(o.riderId) : null;
+          return `<tr>
+            <td class="id">#${o.id.slice(-8).toUpperCase()}</td>
+            <td>${cust?.name||'—'}</td>
+            <td>${vendor?.name||'—'}</td>
+            <td>${o.cylinderSize} ×${o.qty||1}</td>
+            <td>${fmt.currency(o.total||0)}</td>
+            <td>${fmt.statusBadge(o.status)}</td>
+            <td>
+              ${o.status==='confirmed'&&!o.riderId?`
+                <select class="assign-select" onchange="assignRider('${o.id}',this.value)">
+                  <option value="">Assign…</option>
+                  ${riders.map(r=>`<option value="${r.id}">${r.name}</option>`).join('')}
+                </select>
+              `:rider?rider.name:'<span style="color:var(--text-muted)">—</span>'}
+            </td>
+            <td>${fmt.date(o.createdAt)}</td>
+            <td>
+              <div class="action-btns">
+                <button class="btn btn-ghost btn-sm" onclick="viewOrder('${o.id}')">View</button>
+                ${o.status==='pending'?`<button class="btn btn-primary btn-sm" onclick="confirmOrder('${o.id}')">Confirm</button>`:''}
+                ${!['delivered','cancelled'].includes(o.status)?`<button class="btn btn-ghost btn-sm" style="color:#ef4444" onclick="cancelOrder('${o.id}')">Cancel</button>`:''}
+              </div>
+            </td>
+          </tr>`;
+        }).join('') : `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem">No orders found</td></tr>`}
+      </tbody>
+    </table>
+  </div>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:1rem">
+    <div style="font-size:.82rem;color:var(--text-muted)">Showing ${Math.min((page-1)*PER_PAGE+1,total)}–${Math.min(page*PER_PAGE,total)} of ${total}</div>
+    <div style="display:flex;gap:.5rem">
+      <button class="btn btn-ghost btn-sm" onclick="goPage(${page-1})" ${page<=1?'disabled':''}>← Prev</button>
+      <span style="font-size:.82rem;color:var(--text-muted);padding:.4rem .5rem">${page}/${pages}</span>
+      <button class="btn btn-ghost btn-sm" onclick="goPage(${page+1})" ${page>=pages?'disabled':''}>Next →</button>
+    </div>
+  </div>
+  `;
+
+  document.getElementById('searchInput').value = filterSearch;
+  document.getElementById('statusFilter').value = filterStatus;
+  document.getElementById('vendorFilter').value = filterVendor;
+
+  document.getElementById('searchInput').addEventListener('input',e=>{filterSearch=e.target.value;page=1;render();});
+  document.getElementById('statusFilter').addEventListener('change',e=>{filterStatus=e.target.value;page=1;render();});
+  document.getElementById('vendorFilter').addEventListener('change',e=>{filterVendor=e.target.value;page=1;render();});
+}
+
+function goPage(n){page=n;render();}
+
+function assignRider(orderId, riderId){
+  if(!riderId) return;
+  Orders.update(orderId,{riderId, status:'transit'});
+  const rider = Users.find(riderId);
+  Toast.success(`Assigned to ${rider?.name||'rider'}`);
+  render();
+}
+
+function confirmOrder(orderId){
+  Orders.update(orderId,{status:'confirmed'});
+  Toast.success('Order confirmed!');
+  render();
+}
+
+function cancelOrder(orderId){
+  confirmAction('Cancel this order?','This action cannot be undone.',()=>{
+    Orders.update(orderId,{status:'cancelled'});
+    Toast.info('Order cancelled');
+    render();
+  });
+}
+
+function viewOrder(orderId){
+  const o = Orders.find(orderId);
+  if(!o) return;
+  const cust = Users.find(o.customerId);
+  const vendor = Vendors.all().find(v=>v.id===o.vendorId);
+  const rider = o.riderId?Users.find(o.riderId):null;
+  Modal.openWith({
+    id:'orderModal',
+    title:`Order #${o.id.slice(-8).toUpperCase()}`,
+    body:`
+      <div style="display:grid;gap:.6rem;font-size:.88rem">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+          <div><span style="color:var(--text-muted)">Status</span><br>${fmt.statusBadge(o.status)}</div>
+          <div><span style="color:var(--text-muted)">Date</span><br>${fmt.date(o.createdAt)}</div>
+          <div><span style="color:var(--text-muted)">Customer</span><br>${cust?.name||'—'}</div>
+          <div><span style="color:var(--text-muted)">Phone</span><br>${cust?.phone||'—'}</div>
+          <div><span style="color:var(--text-muted)">Vendor</span><br>${vendor?.name||'—'}</div>
+          <div><span style="color:var(--text-muted)">Rider</span><br>${rider?.name||'Not assigned'}</div>
+          <div><span style="color:var(--text-muted)">Cylinder</span><br>${o.cylinderSize} ×${o.qty||1}</div>
+          <div><span style="color:var(--text-muted)">Total</span><br><strong style="color:var(--primary)">${fmt.currency(o.total||0)}</strong></div>
+          <div><span style="color:var(--text-muted)">Payment</span><br>${o.paymentMethod||'—'}</div>
+          <div><span style="color:var(--text-muted)">QR Code</span><br>${o.qrVerified?'✅ Verified':'⏳ Pending'}</div>
+        </div>
+        <div><span style="color:var(--text-muted)">Delivery Address</span><br>${o.address||'—'}</div>
+        ${o.notes?`<div><span style="color:var(--text-muted)">Notes</span><br>${o.notes}</div>`:''}
+      </div>
+    `,
+    size:'md'
+  });
+}
+
+function exportCSV(){
+  const rows = getFiltered();
+  const header = ['Order ID','Customer','Vendor','Cylinder','Qty','Total','Status','Payment','Date'];
+  const lines = rows.map(o=>{
+    const c=Users.find(o.customerId);
+    const v=Vendors.all().find(x=>x.id===o.vendorId);
+    return [
+      '#'+o.id.slice(-8).toUpperCase(),
+      c?.name||'',
+      v?.name||'',
+      o.cylinderSize,
+      o.qty||1,
+      o.total||0,
+      o.status,
+      o.paymentMethod||'',
+      fmt.date(o.createdAt)
+    ].join(',');
+  });
+  const csv = [header.join(','),...lines].join('\n');
+  const blob = new Blob([csv],{type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'gasgo_orders.csv';
+  a.click();
+  Toast.success('CSV exported!');
+}
+
+render();
+</script>
+</body>
+</html>
